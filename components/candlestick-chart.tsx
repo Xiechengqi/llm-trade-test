@@ -86,13 +86,16 @@ export function CandlestickChart({
     return ""
   })
 
-  const [markedCandleTime, setMarkedCandleTime] = useState<number | null>(() => {
+  const [internalMarkedCandleTime, setInternalMarkedCandleTime] = useState<number | null>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("markedCandleTime")
       return saved ? Number.parseInt(saved) : null
     }
     return null
   })
+
+  const markedCandleTime = internalMarkedCandleTime
+  const setMarkedCandleTime = setInternalMarkedCandleTime
 
   useEffect(() => {
     if (!chartContainerRef.current) return

@@ -34,7 +34,7 @@ jobs:
         run: pnpm build
 
       - name: CNAME
-        run: echo 'llm-trader-test.xiechengqi.top' > out/CNAME
+        run: echo 'llm-trade-test.xiechengqi.top' > out/CNAME
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3

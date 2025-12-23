@@ -13,7 +13,7 @@ import {
   type ISeriesMarkersPluginApi,
   LineSeries,
 } from "lightweight-charts"
-import { Loader2 } from "lucide-react"
+import { Loader2, Pencil, List, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -34,6 +34,106 @@ import {
   calculateVPT,
 } from "@/lib/indicators"
 import type { KlineData } from "@/lib/types"
+
+type MarketType = "crypto" | "stock"
+
+// Default crypto pairs fallback
+const DEFAULT_CRYPTO_PAIRS = [
+  "BTCUSDT",
+  "ETHUSDT",
+  "BNBUSDT",
+  "XRPUSDT",
+  "SOLUSDT",
+  "ADAUSDT",
+  "DOGEUSDT",
+  "DOTUSDT",
+  "MATICUSDT",
+  "AVAXUSDT",
+  "LINKUSDT",
+  "LTCUSDT",
+  "ATOMUSDT",
+  "UNIUSDT",
+  "XLMUSDT",
+  "FILUSDT",
+  "AAVEUSDT",
+  "ALGOUSDT",
+  "APTUSDT",
+  "ARBUSDT",
+  "NEARUSDT",
+  "OPUSDT",
+  "PEPEUSDT",
+  "SHIBUSDT",
+  "WIFUSDT",
+  "SUIUSDT",
+  "TIAUSDT",
+  "JUPUSDT",
+  "ENAUSDT",
+]
+
+// Default stock tickers fallback (S&P 500 top stocks)
+const DEFAULT_STOCK_TICKERS = [
+  "AAPL",
+  "MSFT",
+  "GOOGL",
+  "AMZN",
+  "NVDA",
+  "META",
+  "TSLA",
+  "BRK.B",
+  "UNH",
+  "JNJ",
+  "JPM",
+  "V",
+  "PG",
+  "XOM",
+  "HD",
+  "CVX",
+  "MA",
+  "ABBV",
+  "MRK",
+  "LLY",
+  "PFE",
+  "KO",
+  "PEP",
+  "COST",
+  "AVGO",
+  "TMO",
+  "WMT",
+  "MCD",
+  "CSCO",
+  "ACN",
+  "ABT",
+  "DHR",
+  "CRM",
+  "VZ",
+  "ADBE",
+  "NKE",
+  "INTC",
+  "CMCSA",
+  "TXN",
+  "NEE",
+  "AMD",
+  "PM",
+  "ORCL",
+  "HON",
+  "UPS",
+  "BMY",
+  "QCOM",
+  "LOW",
+  "MS",
+  "CAT",
+]
+
+const STORAGE_KEYS = {
+  CRYPTO_PAIRS: "kline_crypto_pairs",
+  STOCK_TICKERS: "kline_stock_tickers",
+  CRYPTO_PAIRS_TIMESTAMP: "kline_crypto_pairs_timestamp",
+  STOCK_TICKERS_TIMESTAMP: "kline_stock_tickers_timestamp",
+  MARKET_TYPE: "kline_market_type",
+}
+
+// Cache validity: 24 hours
+const CACHE_VALIDITY_MS = 24 * 60 * 60 * 1000
 
 interface CandlestickChartProps {
   data: KlineData[]
@@ -80,6 +180,46 @@ export function CandlestickChart({
   const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const indicatorSeriesRef = useRef<Map<number, ISeriesApi<"Line">>>(new Map())
   const [tradingPairSearch, setTradingPairSearch] = useState("")
+
+  const [marketType, setMarketType] = useState<MarketType>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(STORAGE_KEYS.MARKET_TYPE)
+      return (saved as MarketType) || "crypto"
+    }
+    return "crypto"
+  })
+
+  const [cryptoPairs, setCryptoPairs] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(STORAGE_KEYS.CRYPTO_PAIRS)
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch {
+          return DEFAULT_CRYPTO_PAIRS
+        }
+      }
+    }
+    return DEFAULT_CRYPTO_PAIRS
+  })
+
+  const [stockTickers, setStockTickers] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(STORAGE_KEYS.STOCK_TICKERS)
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch {
+          return DEFAULT_STOCK_TICKERS
+        }
+      }
+    }
+    return DEFAULT_STOCK_TICKERS
+  })
+
+  const [pairsLoading, setPairsLoading] = useState(false)
+  const [manualInput, setManualInput] = useState("")
+  const [isCustomPair, setIsCustomPair] = useState(false)
 
   const [activeIndicators, setActiveIndicators] = useState<IndicatorConfig[]>(() => {
     if (typeof window !== "undefined") {
@@ -668,6 +808,124 @@ export function CandlestickChart({
     setActiveIndicators((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const fetchCryptoPairs = useCallback(async () => {
+    // Check cache first
+    const cachedTimestamp = localStorage.getItem(STORAGE_KEYS.CRYPTO_PAIRS_TIMESTAMP)
+    if (cachedTimestamp && Date.now() - Number.parseInt(cachedTimestamp) < CACHE_VALIDITY_MS) {
+      return // Use cached data
+    }
+
+    setPairsLoading(true)
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10s timeout
+
+      const response = await fetch("https://api.binance.com/api/v3/ticker/price", {
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+
+      if (!response.ok) throw new Error("Failed to fetch")
+
+      const data = await response.json()
+      const pairs = data
+        .map((item: { symbol: string }) => item.symbol)
+        .filter((symbol: string) => symbol.endsWith("USDT") || symbol.endsWith("BTC") || symbol.endsWith("ETH"))
+        .sort()
+
+      if (pairs.length > 0) {
+        setCryptoPairs(pairs)
+        localStorage.setItem(STORAGE_KEYS.CRYPTO_PAIRS, JSON.stringify(pairs))
+        localStorage.setItem(STORAGE_KEYS.CRYPTO_PAIRS_TIMESTAMP, Date.now().toString())
+      }
+    } catch (error) {
+      console.error("[v0] Failed to fetch crypto pairs, using defaults:", error)
+      // Keep using current pairs (either cached or defaults)
+    } finally {
+      setPairsLoading(false)
+    }
+  }, [])
+
+  const fetchStockTickers = useCallback(async () => {
+    // Check cache first
+    const cachedTimestamp = localStorage.getItem(STORAGE_KEYS.STOCK_TICKERS_TIMESTAMP)
+    if (cachedTimestamp && Date.now() - Number.parseInt(cachedTimestamp) < CACHE_VALIDITY_MS) {
+      return // Use cached data
+    }
+
+    setPairsLoading(true)
+    const csvUrl = "https://raw.githubusercontent.com/shashankvemuri/Finance/refs/heads/master/s%26p500_tickers.csv"
+
+    // Try with CORS proxy
+    const proxyUrls = [
+      `https://cloudflare-proxy.xiechengqi.top/${csvUrl}`,
+      `https://thingproxy.freeboard.io/fetch/${csvUrl}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}`,
+    ]
+
+    for (const proxyUrl of proxyUrls) {
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 10000) // 10s timeout
+
+        const response = await fetch(proxyUrl, { signal: controller.signal })
+        clearTimeout(timeoutId)
+
+        if (!response.ok) continue
+
+        const csvText = await response.text()
+        // Parse CSV - each line is a ticker
+        const tickers = csvText
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line && !line.toLowerCase().includes("ticker") && /^[A-Z.]+$/.test(line))
+          .sort()
+
+        if (tickers.length > 0) {
+          setStockTickers(tickers)
+          localStorage.setItem(STORAGE_KEYS.STOCK_TICKERS, JSON.stringify(tickers))
+          localStorage.setItem(STORAGE_KEYS.STOCK_TICKERS_TIMESTAMP, Date.now().toString())
+          setPairsLoading(false)
+          return
+        }
+      } catch (error) {
+        console.error("[v0] Proxy failed:", proxyUrl, error)
+        continue
+      }
+    }
+
+    console.error("[v0] All proxies failed for stock tickers, using defaults")
+    setPairsLoading(false)
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.MARKET_TYPE, marketType)
+    if (marketType === "crypto") {
+      fetchCryptoPairs()
+    } else {
+      fetchStockTickers()
+    }
+  }, [marketType, fetchCryptoPairs, fetchStockTickers])
+
+  const displayPairs = marketType === "crypto" ? cryptoPairs : stockTickers.map((t) => `STOCK:${t}`)
+
+  const handleManualInputSubmit = () => {
+    if (manualInput.trim()) {
+      const pair =
+        marketType === "stock" && !manualInput.startsWith("STOCK:")
+          ? `STOCK:${manualInput.trim().toUpperCase()}`
+          : manualInput.trim().toUpperCase()
+      onTradingPairChange(pair)
+      setManualInput("")
+    }
+  }
+
+  const handleReload = () => {
+    if (onForceReload) {
+      onForceReload()
+    }
+  }
+
   return (
     <div className="space-y-4">
       {markedCandleTime && (
@@ -688,50 +946,99 @@ export function CandlestickChart({
         </div>
       )}
 
-      <IndicatorsDropdown
-        onAddIndicator={handleAddIndicator}
-        activeIndicators={activeIndicators}
-        onToggleIndicator={handleToggleIndicator}
-        onRemoveIndicator={handleRemoveIndicator}
-      />
-
       <div className="flex flex-wrap items-center gap-3">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="w-[140px] justify-between bg-transparent">
-              <span className="truncate">{tradingPair}</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[200px] p-0" align="start">
-            <Command>
-              <CommandInput
-                placeholder="搜索交易对..."
-                value={tradingPairSearch}
-                onValueChange={setTradingPairSearch}
-              />
-              <CommandList>
-                <CommandEmpty>未找到交易对</CommandEmpty>
-                <CommandGroup>
-                  {popularPairs
-                    .filter((pair) => pair.toLowerCase().includes(tradingPairSearch.toLowerCase()))
-                    .map((pair) => (
-                      <CommandItem
-                        key={pair}
-                        value={pair}
-                        onSelect={() => {
-                          onTradingPairChange(pair)
-                          setTradingPairSearch("")
-                        }}
-                      >
-                        {pair}
-                      </CommandItem>
-                    ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+        {/* Market type selector */}
+        <Select value={marketType} onValueChange={(value: MarketType) => setMarketType(value)}>
+          <SelectTrigger className="w-[120px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="crypto">加密货币</SelectItem>
+            <SelectItem value="stock">美股</SelectItem>
+          </SelectContent>
+        </Select>
 
+        <div className="flex items-center gap-2">
+          {!isCustomPair ? (
+            <>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-[160px] justify-between bg-transparent">
+                    {pairsLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <span className="truncate">{tradingPair}</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[250px] p-0" align="start">
+                  <Command>
+                    <CommandInput
+                      placeholder="搜索交易对..."
+                      value={tradingPairSearch}
+                      onValueChange={setTradingPairSearch}
+                    />
+                    <CommandList>
+                      <CommandEmpty>未找到交易对</CommandEmpty>
+                      <CommandGroup>
+                        {displayPairs
+                          .filter((pair) => pair.toLowerCase().includes(tradingPairSearch.toLowerCase()))
+                          .slice(0, 100)
+                          .map((pair) => (
+                            <CommandItem
+                              key={pair}
+                              value={pair}
+                              onSelect={() => {
+                                onTradingPairChange(pair)
+                                setTradingPairSearch("")
+                              }}
+                            >
+                              {pair}
+                            </CommandItem>
+                          ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={() => setIsCustomPair(true)}
+                title="手动输入交易对"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Input
+                placeholder={marketType === "crypto" ? "输入交易对 如 BTCUSDT" : "输入股票代码 如 AAPL"}
+                value={manualInput}
+                onChange={(e) => setManualInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleManualInputSubmit()
+                    setIsCustomPair(false)
+                  }
+                }}
+                className="w-[180px]"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={() => setIsCustomPair(false)}
+                title="从列表选择"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+        </div>
+
+        {/* Interval selection */}
         <div className="flex items-center gap-2">
           <Select
             value={isCustomInterval ? "custom" : klineInterval}
@@ -775,6 +1082,7 @@ export function CandlestickChart({
           )}
         </div>
 
+        {/* Limit selection */}
         <Select
           value={limit.toString()}
           onValueChange={(value) => {
@@ -796,6 +1104,7 @@ export function CandlestickChart({
           </SelectContent>
         </Select>
 
+        {/* Date time selection and reload button */}
         <div className="flex items-center gap-2">
           <Input
             type="date"
@@ -838,47 +1147,23 @@ export function CandlestickChart({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              let timestamp: number
-
-              if (!selectedDate && !selectedTime) {
-                // Use current time if both fields are empty
-                timestamp = Date.now()
-              } else if (selectedDate && selectedTime) {
-                // Use selected date and time
-                const datetime = `${selectedDate}T${selectedTime}`
-                timestamp = new Date(datetime).getTime()
-              } else {
-                // If only one field is filled, don't set timestamp
-                timestamp = 0
-              }
-
-              if (timestamp > 0 && onTimePointChange) {
-                onTimePointChange(timestamp)
-              }
-
-              if (onForceReload) {
-                onForceReload()
-              }
-            }}
+            onClick={handleReload}
             disabled={isLoading}
             className="h-9 px-3 bg-transparent"
-            title="重载图表数据"
+            title="重新加载"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="size-4"
-            >
-              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
-            </svg>
+            {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           </Button>
         </div>
+      </div>
+
+      <div className="flex items-center">
+        <IndicatorsDropdown
+          onAddIndicator={handleAddIndicator}
+          activeIndicators={activeIndicators}
+          onToggleIndicator={handleToggleIndicator}
+          onRemoveIndicator={handleRemoveIndicator}
+        />
       </div>
 
       <div className="relative w-full min-h-[400px]">

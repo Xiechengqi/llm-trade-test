@@ -1142,8 +1142,8 @@ markdown
           const yahooBaseUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${stockSymbol}?interval=${yahooInterval}&range=${range}`
 
           const corsProxies = [
-            // web.818233.xyz - primary (用户提供的代理)
-            `https://web.818233.xyz/${yahooBaseUrl}`,
+            // cloudflare-proxy - primary (用户提供的代理)
+            `https://cloudflare-proxy.xiechengqi.top/${yahooBaseUrl}`,
             // ThingProxy - secondary
             `https://thingproxy.freeboard.io/fetch/${yahooBaseUrl}`,
             // allorigins - tertiary

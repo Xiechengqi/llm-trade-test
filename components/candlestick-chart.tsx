@@ -43,6 +43,8 @@ interface CandlestickChartProps {
   limit?: number
   onLimitChange?: (limit: number) => void
   onForceReload?: () => void
+  markedCandleTime?: number | null
+  onMarkedCandleTimeChange?: (time: number | null) => void
 }
 
 export function CandlestickChart({
@@ -60,6 +62,8 @@ export function CandlestickChart({
   limit = 100,
   onLimitChange,
   onForceReload,
+  markedCandleTime: externalMarkedCandleTime,
+  onMarkedCandleTimeChange,
 }: CandlestickChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -94,8 +98,8 @@ export function CandlestickChart({
     return null
   })
 
-  const markedCandleTime = internalMarkedCandleTime
-  const setMarkedCandleTime = setInternalMarkedCandleTime
+  const markedCandleTime = externalMarkedCandleTime !== undefined ? externalMarkedCandleTime : internalMarkedCandleTime
+  const setMarkedCandleTime = onMarkedCandleTimeChange || setInternalMarkedCandleTime
 
   useEffect(() => {
     if (!chartContainerRef.current) return

@@ -7,6 +7,7 @@ import { CandlestickChart, type KlineData } from "@/components/candlestick-chart
 
 import { CardDescription } from "@/components/ui/card"
 import {
+  Copy,
   Pencil,
   List,
   Eye,
@@ -30,8 +31,6 @@ import {
   Loader2,
   RefreshCw,
   Heart,
-  Copy,
-  Check,
 } from "lucide-react" // Import Copy, Pencil, List, Eye, EyeOff, RotateCcw, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calendar, Check, Clock, X, Play, StopCircle icons
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react" // Import useRef, useMemo, useCallback
@@ -41,11 +40,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
 import { useToast } from "@/hooks/use-toast"
 import { Toaster } from "@/components/ui/toaster"
 import { TableBody, TableCell, TableHead, TableRow, Table } from "@/components/ui/table" // Import Table components
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 
 import {
   initDB,
@@ -656,10 +657,6 @@ markdown
   const [availableInputModalities, setAvailableInputModalities] = useState<string[]>([])
   const [availableOutputModalities, setAvailableOutputModalities] = useState<string[]>([])
 
-  // CHANGE: Add missing K-line data state declarations
-  const [klineData, setKlineData] = useState<KlineData[]>([])
-  const [isLoadingKline, setIsLoadingKline] = useState(false)
-
   const [messageImages, setMessageImages] = useState<MessageImage[]>([])
   const [imageUrl, setImageUrl] = useState("")
   const [showImageUrlInput, setShowImageUrlInput] = useState(false)
@@ -691,9 +688,11 @@ markdown
     return "1h"
   })
 
-  // CHANGE: Remove markedCandleTime state and related changes, will re-apply carefully
-  // const [markedCandleTime, setMarkedCandleTime] = useState<number | null>(null)
+  const [markedCandleTime, setMarkedCandleTime] = useState<number | null>(null)
 
+  const [klineData, setKlineData] = useState<KlineData[]>([])
+  const [isLoadingKline, setIsLoadingKline] = useState(false)
+  const [tradingPairSearch, setTradingPairSearch] = useState("")
   const [klineEndTime, setKlineEndTime] = useState<number | undefined>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("klineEndTime")
@@ -732,7 +731,7 @@ markdown
   }, [klineEndTime])
 
   // Popular trading pairs for quick selection
-  const POPULAR_PAIRS = [
+  const popularPairs = [
     "BTCUSDT",
     "ETHUSDT",
     "BNBUSDT",
@@ -746,7 +745,7 @@ markdown
   ]
 
   // K-line intervals
-  const INTERVALS = [
+  const intervals = [
     { value: "1m", label: "1分钟" },
     { value: "5m", label: "5分钟" },
     { value: "15m", label: "15分钟" },
@@ -764,13 +763,7 @@ markdown
 
   const fetchKlineData = useCallback(
     async (pair: string, interval: string, limit: number, endTime?: number): Promise<KlineData[]> => {
-      // setIsLoadingKline is not declared, assuming it's intended to be used.
-      // If not, it should be removed or declared. For now, assuming its existence.
-      // For demonstration, let's assume it's declared as `const [isLoadingKline, setIsLoadingKline] = useState(false);`
-      // If it's truly missing, this would cause a runtime error.
-      // For the purpose of this merge, I'll assume `isLoadingKline` and `setIsLoadingKline` exist as state variables.
-      // const setIsLoadingKline = () => {} // Placeholder if setIsLoadingKline is not found in the original code
-      setIsLoadingKline(true) // Use the declared setIsLoadingKline
+      setIsLoadingKline(true)
       console.log("[v0] Fetching K-line data:", { pair, interval, limit, endTime })
       try {
         const endTimeParam = endTime ? `&endTime=${endTime}` : ""
@@ -792,12 +785,7 @@ markdown
           volume: Number.parseFloat(item[5]),
         }))
 
-        // setKlineData is not declared, assuming it's intended to be used.
-        // If not, it should be removed or declared. For now, assuming its existence.
-        // For demonstration, let's assume it's declared as `const [klineData, setKlineData] = useState<KlineData[]>([]);`
-        // If it's truly missing, this would cause a runtime error.
-        // const setKlineData = () => {} // Placeholder if setKlineData is not found in the original code
-        setKlineData(formattedData) // Use the declared setKlineData
+        setKlineData(formattedData)
         return formattedData // Return the formatted data
       } catch (error) {
         console.error("Error fetching kline data:", error)
@@ -808,28 +796,25 @@ markdown
         })
         throw error // Rethrow the error so caller can handle it
       } finally {
-        setIsLoadingKline(false) // Use the declared setIsLoadingKline
+        setIsLoadingKline(false)
       }
     },
     [toast],
   )
 
-  const forceReloadKlineData = useCallback(async (): Promise<KlineData[]> => {
-    console.log("[v0] Force reloading K-line data with current parameters:", {
-      tradingPair,
-      klineInterval,
-      klineLimit,
-      klineEndTime,
-    })
-    return await fetchKlineData(tradingPair, klineInterval, klineLimit, klineEndTime)
-  }, [tradingPair, klineInterval, klineLimit, klineEndTime, fetchKlineData])
-
-  // CHANGE: Separate useEffect that explicitly triggers on limit and endTime changes
-  // Use refs to store the latest values to avoid stale closures
+  const tradingPairRef = useRef(tradingPair)
+  const klineIntervalRef = useRef(klineInterval)
   const klineLimitRef = useRef(klineLimit)
   const klineEndTimeRef = useRef(klineEndTime)
 
-  // Update refs when values change
+  useEffect(() => {
+    tradingPairRef.current = tradingPair
+  }, [tradingPair])
+
+  useEffect(() => {
+    klineIntervalRef.current = klineInterval
+  }, [klineInterval])
+
   useEffect(() => {
     klineLimitRef.current = klineLimit
   }, [klineLimit])
@@ -838,33 +823,57 @@ markdown
     klineEndTimeRef.current = klineEndTime
   }, [klineEndTime])
 
+  const forceReloadKlineData = useCallback(async (): Promise<KlineData[]> => {
+    const currentPair = tradingPairRef.current
+    const currentInterval = klineIntervalRef.current
+    const currentLimit = klineLimitRef.current
+    const currentEndTime = klineEndTimeRef.current
+
+    console.log("[v0] Force reloading K-line data with current parameters:", {
+      tradingPair: currentPair,
+      klineInterval: currentInterval,
+      klineLimit: currentLimit,
+      klineEndTime: currentEndTime,
+    })
+    return await fetchKlineData(currentPair, currentInterval, currentLimit, currentEndTime)
+  }, [fetchKlineData])
+
+  // CHANGE: Separated useEffects for localStorage and other effects
+  useEffect(() => {
+    console.log("[v0] K-line chart settings effect triggered")
+    // Effect to handle saving settings to localStorage
+    if (typeof window !== "undefined") {
+      localStorage.setItem("tradingPair", tradingPair)
+      localStorage.setItem("klineInterval", klineInterval)
+      localStorage.setItem("klineLimit", klineLimit.toString())
+      if (klineEndTime !== undefined) {
+        localStorage.setItem("klineEndTime", klineEndTime.toString())
+      } else {
+        localStorage.removeItem("klineEndTime")
+      }
+    }
+  }, [tradingPair, klineInterval, klineLimit, klineEndTime])
+
   // Main fetch effect - trigger on any dependency change
   useEffect(() => {
-    console.log("[v0] K-line useEffect triggered:", {
+    console.log("[v0] K-line data fetch effect triggered:", {
       tradingPair,
       klineInterval,
       klineLimit,
       klineEndTime,
     })
 
-    // CHANGE: Removed showKlineChart condition - chart should always fetch data
     if (tradingPair && klineInterval) {
       fetchKlineData(tradingPair, klineInterval, klineLimit, klineEndTime)
     }
   }, [tradingPair, klineInterval, klineLimit, klineEndTime, fetchKlineData])
 
-  // CHANGE: Rename handleCandleClick to handleKlineCandleClick to avoid name collision with the chart component's prop
   // Handle candle click - put K-line data into user message
-  const handleKlineCandleClick = useCallback(
+  const handleCandleClick = useCallback(
     (dataBeforeClick: KlineData[], clickedCandle: KlineData) => {
-      // Step 1: Mark the clicked candle's time
-      // CHANGE: Remove markedCandleTime state and related changes
-      // setMarkedCandleTime(clickedCandle.time)
-      // console.log("[v0] Marked candle time:", new Date(clickedCandle.time).toLocaleString())
-
       const formattedData = dataBeforeClick
         .map((item) => {
-          const date = new Date(item.time + 8 * 60 * 60 * 1000) // Convert to UTC+8
+          const date = new Date(item.time + 8 * 60 * 60 * 1000) // Adjust for UTC to local time
           const timeStr = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")} ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`
           return `时间: ${timeStr}, 开: ${item.open}, 高: ${item.high}, 低: ${item.low}, 收: ${item.close}, 量: ${item.volume}`
         })
@@ -872,6 +881,9 @@ markdown
 
       const message = `交易对: ${tradingPair}\n周期: ${klineInterval}\n\nK线数据:\n${formattedData}`
       setUserMessage(message)
+
+      // Mark the clicked candle's time
+      setMarkedCandleTime(clickedCandle.time)
 
       toast({
         title: "K线数据已填入",
@@ -881,7 +893,7 @@ markdown
     [tradingPair, klineInterval, toast],
   )
 
-  // 获取当前选中的模型信息（提前定义，供 fullApiPath 使用）
+  //获取当前选中的模型信息（提前定义，供 fullApiPath 使用）
   const selectedModelInfoForPath = useMemo(() => {
     if (provider === "openrouter" && model) {
       const modelIdWithoutFree = model.endsWith(":free") ? model.slice(0, -5) : model
@@ -949,7 +961,6 @@ markdown
           if (settings.promptFilePath !== undefined) setPromptFilePath(settings.promptFilePath)
           if (settings.enablePromptFile !== undefined) setEnablePromptFile(settings.enablePromptFile)
           if (settings.systemPromptFilePath !== undefined) setSystemPromptFilePath(settings.systemPromptFilePath)
-          if (settings.enableSystemPromptFile !== undefined) setEnableSystemPromptFile(settings.enableSystemPromptFile)
           if (settings.autoReloadPrompt !== undefined) setAutoReloadPrompt(settings.autoReloadPrompt)
           if (settings.autoReloadSystemPrompt !== undefined) setAutoReloadSystemPrompt(settings.autoReloadSystemPrompt)
           if (settings.autoReloadImages !== undefined) setAutoReloadImages(settings.autoReloadImages)
@@ -985,8 +996,8 @@ markdown
           if (settings.klineEndTime !== undefined) setKlineEndTime(settings.klineEndTime) // Added klineEndTime to settings
           // Load markdown parsing state
           if (settings.parseResponseMarkdown !== undefined) setParseResponseMarkdown(settings.parseResponseMarkdown)
-          // CHANGE: Load markedCandleTime from settings
-          // if (settings.markedCandleTime !== undefined) setMarkedCandleTime(settings.markedCandleTime)
+          // Load marked candle time from settings
+          if (settings.markedCandleTime !== undefined) setMarkedCandleTime(settings.markedCandleTime)
         }
 
         console.log("[v0] Loading images from IndexedDB...")
@@ -1087,8 +1098,8 @@ markdown
       klineEndTime, // Added klineEndTime to settings
       // Add markdown parsing state to settings
       parseResponseMarkdown,
-      // CHANGE: Add markedCandleTime to settings
-      // markedCandleTime,
+      // Add marked candle time to settings
+      markedCandleTime,
     }
     localStorage.setItem("llm-api-test-settings", JSON.stringify(settings))
   }, [
@@ -1135,7 +1146,7 @@ markdown
     klineLimit, // CHANGE: Added klineLimit dependency
     klineEndTime, // Added klineEndTime dependency
     parseResponseMarkdown, // Added parseResponseMarkdown dependency
-    // markedCandleTime, // CHANGE: Added markedCandleTime dependency
+    markedCandleTime, // Added markedCandleTime dependency
   ])
 
   useEffect(() => {
@@ -1466,7 +1477,7 @@ markdown
 
   const runProbeTest = async () => {
     if (!apiKey || !model || !fullApiPath) return // Added fullApiPath check
-    if (isProbeTesting) return // Prevent duplicate clicks
+    if (isProbeTesting) return // 防止重复点击
 
     setIsProbeTesting(true)
     toast({
@@ -1704,7 +1715,7 @@ markdown
     }
   }, [provider])
 
-  const handleTest = async () => {
+  const handleTest = async (messageOverride?: string) => {
     // if (loading) return // Prevent multiple simultaneous tests
     console.log("[v0] handleTest called, loading:", loading)
 
@@ -1805,13 +1816,13 @@ markdown
     console.log("[v0] Final system prompt length:", finalSystemPrompt.length)
 
     // Handle external user message loading
-    let finalUserMessage = userMessage
-
     console.log("[v0] enablePromptFile:", enablePromptFile)
     console.log("[v0] autoReloadPrompt:", autoReloadPrompt)
     console.log("[v0] isPromptFromLocalFile:", isPromptFromLocalFile)
     console.log("[v0] promptFileHandleRef.current:", promptFileHandleRef.current)
     console.log("[v0] promptFilePath:", promptFilePath)
+
+    let finalUserMessage = messageOverride !== undefined ? messageOverride : userMessage
 
     if (enablePromptFile && promptFilePath.trim()) {
       console.log("[v0] User message external loading enabled")
@@ -1856,40 +1867,33 @@ markdown
 
     console.log("[v0] Final user message length:", finalUserMessage.length)
 
-    // CHANGE: Use currentImages instead of messageImages to ensure we use the reloaded images
-    let userMessageContent: any = finalUserMessage
-
-    if (currentImages.length > 0) {
-      // If there are images, use the multi-modal format
-      const contentParts: any[] = [
-        {
-          type: "text",
-          text: finalUserMessage,
-        },
-      ]
-
-      currentImages.forEach((img) => {
-        if (img.base64) {
-          // Use base64 data for all images (both URL and file types)
-          contentParts.push({
-            type: "image_url",
-            image_url: {
-              url: img.base64,
+    // Prepare the user message content based on whether there are images
+    const userContent: Array<{ type: "text" | "image_url"; text?: string; image_url?: { url: string } }> =
+      currentImages.length > 0
+        ? [
+            {
+              type: "text",
+              text: finalUserMessage,
             },
-          })
-        }
-      })
+            ...currentImages.map((img) => ({
+              type: "image_url" as const,
+              image_url: { url: img.url }, // Use img.url directly from currentImages
+            })),
+          ]
+        : [
+            {
+              type: "text",
+              text: finalUserMessage,
+            },
+          ]
 
-      userMessageContent = contentParts
-    }
-
+    // The rest of the requestBody preparation will use `userContent`
     const messages: any[] = [
-      { role: "user", content: userMessageContent },
+      { role: "user", content: userContent }, // Use prepared userContent
       { role: "system", content: finalSystemPrompt },
     ]
 
-    // 检查是否是 ModelScope 的图片生成模型
-    const isModelScopeImageGeneration =
+    const modelScopeImageGeneration =
       provider === "modelscope" &&
       selectedModelInfoForPath &&
       (() => {
@@ -1911,11 +1915,13 @@ markdown
     }
 
     // ModelScope 图片生成模型使用 prompt 而不是 messages
-    if (isModelScopeImageGeneration) {
-      requestBody.prompt = finalUserMessage
+    if (modelScopeImageGeneration) {
+      requestBody.prompt = finalUserMessage // For image generation, use the text message as prompt
     } else {
       requestBody.messages = messages
     }
+
+    console.log("[v0] Generating request with user message length:", finalUserMessage.length)
 
     // Generate cURL command, handling potential undefined values for headers
     const curlHeaders = ["Content-Type: application/json", `Authorization: Bearer ${apiKey}`]
@@ -1928,10 +1934,11 @@ markdown
 
     const requestCurl = `curl ${fullApiPath} \\
   -X POST \\
-  ${curlHeaders.map((h) => `-H "${h}" \\`).join("")}
+  ${curlHeaders.map((h) => `-H "${h}" \\`).join("\n  ")}
   -d '${JSON.stringify(requestBody, null, 2).replace(/\n/g, "\n  ")}'`
 
     setRequestData(requestCurl)
+    console.log("[v0] Request curl generated, length:", requestCurl.length)
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => {
@@ -1939,6 +1946,7 @@ markdown
     }, 60000) // 60 second timeout
 
     try {
+      console.log("[v0] Sending request to:", fullApiPath)
       const startTime = performance.now() // Track start time
 
       const response = await fetch(fullApiPath, {
@@ -2012,7 +2020,8 @@ markdown
           // Check for reasoning_details (new format for deep thinking models like OLMo, DeepSeek R1, etc.)
           const reasoningDetails = parsedResponse?.choices?.[0]?.message?.reasoning_details?.[0]?.text
           const reasoningContent =
-            parsedResponse?.choices?.[0]?.message?.reasoning_content || parsedResponse?.choices?.[0]?.message?.reasoning
+            parsedResponse?.choices?.[0]?.message?.reasoning_content ||
+            parsedResponse?.choices?.[0]?.message?.reasoning
 
           if (reasoningDetails) {
             // New format: reasoning_details array with text field
@@ -2164,8 +2173,45 @@ markdown
     // Execute handleTest immediately for the first time
     handleTest()
 
-    // Set up the interval for subsequent calls
-    timerRef.current = setInterval(() => {
+    // Set up the interval for subsequent calls with K-line reload
+    timerRef.current = setInterval(async () => {
+      // Check if there's a selected candle
+      if (markedCandleTime === null) {
+        // No selected candle, reload K-line data before test
+        console.log("[v0] Timer tick: No selected candle, reloading K-line data...")
+        try {
+          const loadedData = await forceReloadKlineData()
+
+          if (loadedData && loadedData.length > 0) {
+            const klineDataText =
+              `【K线数据】\n交易对: ${tradingPairRef.current}\n周期: ${klineIntervalRef.current}\n数据量: ${loadedData.length}条\n\n` +
+              loadedData
+                .map((candle, index) => {
+                  const date = new Date(candle.time)
+                  const timeStr = date.toLocaleString("zh-CN", {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: false,
+                  })
+                  return `${index + 1}. 时间: ${timeStr}, 开: ${candle.open}, 高: ${candle.high}, 低: ${candle.low}, 收: ${candle.close}, 量: ${candle.volume}`
+                })
+                .join("\n")
+
+            setUserMessage(klineDataText)
+            console.log("[v0] Timer tick: Updated user message with fresh K-line data")
+          }
+        } catch (error) {
+          console.error("[v0] Timer tick: Error reloading K-line data:", error)
+        }
+      } else {
+        console.log("[v0] Timer tick: Selected candle exists, using existing message")
+      }
+
+      // Execute the test with updated message
       handleTest()
     }, timerInterval * 1000) // Convert seconds to milliseconds
   }
@@ -2195,100 +2241,84 @@ markdown
   // Combine test and timer start logic
   const handleStartTest = async () => {
     // <-- Modified to be async
-    console.log("[v0] handleStartTest called")
+    console.log("[v0] handleStartTest called, checking for selected candle...")
 
-    setUserMessage("")
-    console.log("[v0] Cleared user message")
+    if (markedCandleTime !== null) {
+      // If candle is selected, do nothing - just proceed with existing message
+      console.log("[v0] Selected candle exists, proceeding without reload")
+    } else {
+      // If no candle selected, clear message, reload chart, and write all K-line data
+      console.log("[v0] No selected candle, clearing message and reloading K-line data...")
 
-    toast({
-      title: "正在重载K线数据",
-      description: "请稍等...",
-      duration: 2000,
-    })
+      // Clear user message
+      setUserMessage("")
 
-    try {
-      const loadedData = await forceReloadKlineData()
-      console.log("[v0] K-line data reload completed, data length:", loadedData?.length || 0)
+      // Show toast notification that reload is starting
+      toast({
+        title: "正在重载K线数据",
+        description: "请稍等...",
+        duration: 2000,
+      })
 
-      if (loadedData && loadedData.length > 0) {
-        let dataToWrite: KlineData[]
-        let description: string
+      try {
+        const loadedData = await forceReloadKlineData()
 
-        // CHANGE: Remove markedCandleTime state and related changes
-        // if (markedCandleTime !== null) {
-        //   // If there's a selected candle, use data up to and including that candle
-        //   const markedIndex = loadedData.findIndex((item) => item.time === markedCandleTime)
-        //   if (markedIndex >= 0) {
-        //     dataToWrite = loadedData.slice(0, markedIndex + 1)
-        //     description = `已将选中蜡烛之前的 ${dataToWrite.length} 条K线数据写入消息`
-        //     console.log("[v0] Using selected candle data, count:", dataToWrite.length)
-        //   } else {
-        //     // If marked candle not found in new data, use all data
-        //     dataToWrite = loadedData
-        //     description = `已将全部 ${dataToWrite.length} 条K线数据写入消息`
-        //     console.log("[v0] Marked candle not found in reloaded data, using all data")
-        //   }
-        // } else {
-        //   // If no selected candle, use all data
-        //   dataToWrite = loadedData
-        //   description = `已将全部 ${dataToWrite.length} 条K线数据写入消息`
-        //   console.log("[v0] No selected candle, using all data")
-        // }
+        console.log("[v0] K-line data reload completed, data length:", loadedData?.length || 0)
 
-        // Default behavior: use all data if markedCandleTime is not set or not found
-        dataToWrite = loadedData
-        description = `已将全部 ${dataToWrite.length} 条K线数据写入消息`
-        console.log("[v0] Using all reloaded K-line data")
-
-        const klineDataText =
-          `【K线数据】\n交易对: ${tradingPair}\n周期: ${klineInterval}\n数据量: ${dataToWrite.length}条\n\n` +
-          dataToWrite
-            .map((candle, index) => {
-              const date = new Date(candle.time)
-              const timeStr = date.toLocaleString("zh-CN", {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-                hour12: false,
+        if (loadedData && loadedData.length > 0) {
+          const klineDataText =
+            `【K线数据】\n交易对: ${tradingPair}\n周期: ${klineInterval}\n数据量: ${loadedData.length}条\n\n` +
+            loadedData
+              .map((candle, index) => {
+                const date = new Date(candle.time) // Use candle.time directly for UTC
+                const timeStr = date.toLocaleString("zh-CN", {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                  hour12: false,
+                })
+                return `${index + 1}. 时间: ${timeStr}, 开: ${candle.open}, 高: ${candle.high}, 低: ${candle.low}, 收: ${candle.close}, 量: ${candle.volume}`
               })
-              return `${index + 1}. 时间: ${timeStr}, 开: ${candle.open}, 高: ${candle.high}, 低: ${candle.low}, 收: ${candle.close}, 量: ${candle.volume}`
-            })
-            .join("\n")
+              .join("\n")
 
-        setUserMessage(klineDataText)
-        console.log("[v0] Wrote K-line data to user message, length:", klineDataText.length)
+          setUserMessage(klineDataText)
+          console.log("[v0] Overwrote user message with K-line data, length:", klineDataText.length)
 
-        toast({
-          title: "K线数据已写入",
-          description: description,
-          className: "bg-green-50 border-green-200",
-          duration: 2000,
-        })
+          toast({
+            title: "K线数据已添加",
+            description: `已将 ${loadedData.length} 条K线数据添加到消息中`,
+            className: "bg-green-50 border-green-200",
+            duration: 2000,
+          })
 
-        // Wait a moment for the message to update in state
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      } else {
+          if (timerEnabled) {
+            startTimer()
+          } else {
+            handleTest(klineDataText)
+          }
+          return // Return early since we've already called handleTest
+        } else {
+          toast({
+            variant: "destructive",
+            title: "K线数据为空",
+            description: "无法获取K线数据，请检查参数设置",
+          })
+          return
+        }
+      } catch (error) {
+        console.error("[v0] Error reloading K-line data:", error)
         toast({
           variant: "destructive",
-          title: "K线数据为空",
-          description: "无法获取K线数据，请检查参数设置",
+          title: "K线数据加载失败",
+          description: "请重试或检查网络连接",
         })
-        return // Stop here if no kline data
+        return
       }
-    } catch (error) {
-      console.error("[v0] Error reloading K-line data:", error)
-      toast({
-        variant: "destructive",
-        title: "K线数据加载失败",
-        description: "请重试或检查网络连接",
-      })
-      return
     }
 
-    // Continue with the test
     if (timerEnabled) {
       startTimer()
     } else {
@@ -2341,13 +2371,10 @@ markdown
     setAutoReloadImages(DEFAULT_VALUES.autoReloadImages) // Reset autoReloadImages
 
     // Reset K-line states
-    // Assuming setKlineData is declared
-    // const setKlineData = () => {} // Placeholder
     setKlineData([])
     setKlineEndTime(undefined) // Reset endTime
     setKlineLimit(100) // Reset klineLimit
-    // CHANGE: Remove markedCandleTime reset
-    // setMarkedCandleTime(null) // Reset marked candle time
+    setMarkedCandleTime(null) // Reset marked candle time
 
     // Remove specific items from localStorage
     localStorage.removeItem("llm-api-test-settings") // Clear all settings and reload defaults
@@ -2385,13 +2412,10 @@ markdown
     setIsAddingImageUrl(false)
 
     // Reset K-line states
-    // Assuming setKlineData is declared
-    // const setKlineData = () => {} // Placeholder
     setKlineData([])
     setKlineEndTime(undefined) // Reset endTime
     setKlineLimit(100) // Reset klineLimit
-    // CHANGE: Remove markedCandleTime reset
-    // setMarkedCandleTime(null) // Reset marked candle time
+    setMarkedCandleTime(null) // Reset marked candle time
 
     // Remove specific items from localStorage
     localStorage.removeItem("llm-api-test-settings") // Clear all settings and reload defaults
@@ -2837,7 +2861,7 @@ markdown
     })
 
     // Links [text](url)
-    currentText = currentText.replace(/\[(.+?)\]\$\$(.+?)\$\$/g, (_, linkText, url) => {
+    currentText = currentText.replace(/\[(.+?)\]$$(.+?)$$/g, (_, linkText, url) => {
       const key = `link-${keyCounter++}`
       parts.push(
         <a key={key} href={url} className="text-primary underline" target="_blank" rel="noopener noreferrer">
@@ -3010,7 +3034,7 @@ markdown
     )
   }
 
-  // const expandAllHistory = false // Placeholder to resolve lint error, can be replaced with actual state if needed.
+  const expandAllHistory = false // Placeholder to resolve lint error, can be replaced with actual state if needed.
 
   const applyHistoryItem = (item: ModelHistoryItem) => {
     setProvider(item.provider)
@@ -3475,7 +3499,7 @@ markdown
 
       reader.readAsDataURL(blob)
     } catch (error) {
-      console.error("[v0] Error loading image from URL:", error)
+      console.error("[v0] Error loading image from URL:", error) // Changed from "[v0] Error loading image from URL:"
       setIsAddingImageUrl(false)
       toast({
         variant: "destructive",
@@ -4088,22 +4112,21 @@ markdown
           <CardContent className="p-6">
             <CandlestickChart
               data={klineData}
-              onCandleClick={handleKlineCandleClick} // Renamed prop to avoid collision
+              onCandleClick={handleCandleClick}
               isLoading={isLoadingKline}
               tradingPair={tradingPair}
               onTradingPairChange={setTradingPair}
               klineInterval={klineInterval}
               onIntervalChange={setKlineInterval}
-              popularPairs={POPULAR_PAIRS}
-              intervals={INTERVALS}
+              popularPairs={popularPairs}
+              intervals={intervals}
               onTimePointChange={setKlineEndTime}
               endTime={klineEndTime}
               limit={klineLimit}
               onLimitChange={setKlineLimit}
               onForceReload={forceReloadKlineData}
-              // CHANGE: Remove markedCandleTime prop and related changes
-              // markedCandleTime={markedCandleTime}
-              // onMarkedCandleTimeChange={setMarkedCandleTime}
+              markedCandleTime={markedCandleTime}
+              onMarkedCandleTimeChange={setMarkedCandleTime}
             />
           </CardContent>
         </Card>
@@ -4567,8 +4590,159 @@ markdown
                       </div>
                     )}
                   </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>定时配置</Label>
+                    <p className="text-xs text-muted-foreground">设置自动定时执行测试</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="timerEnabled"
+                      checked={timerEnabled}
+                      onChange={(e) => {
+                        setTimerEnabled(e.target.checked)
+                        if (!e.target.checked && isTimerRunning) {
+                          stopTimer()
+                        }
+                      }}
+                      className="h-4 w-4 rounded border-input bg-background accent-primary cursor-pointer"
+                    />
+                    <Label htmlFor="timerEnabled" className="cursor-pointer font-normal">
+                      启用定时执行
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="timerInterval" className="text-sm text-muted-foreground whitespace-nowrap">
+                      间隔时间
+                    </Label>
+                    <Input
+                      id="timerInterval"
+                      type="number"
+                      value={timerInterval}
+                      onChange={(e) => setTimerInterval(Math.max(1, Number(e.target.value)))}
+                      className="w-20 h-8"
+                      min={1}
+                      disabled={!timerEnabled} // Disable input if timer is not enabled
+                    />
+                    <span className="text-sm text-muted-foreground">秒</span>
+                  </div>
+                  {isTimerRunning && (
+                    <span className="text-xs text-muted-foreground bg-primary/10 px-2 py-1 rounded">
+                      定时运行中 (每 {timerInterval} 秒)
+                    </span>
+                  )}
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="maxTokens">Max Tokens</Label>
+                    <p className="text-xs text-muted-foreground">最大生成令牌数量（范围: 1 - {maxTokensLimit}）</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{maxTokens}</span>
+                    <span className="text-sm font-medium">/</span>
+                    <Input
+                      type="number"
+                      value={maxTokensLimit}
+                      onChange={(e) => {
+                        const newLimit = Math.max(1, Number(e.target.value))
+                        setMaxTokensLimit(newLimit)
+                        if (maxTokens > newLimit) {
+                          setMaxTokens(newLimit)
+                        }
+                      }}
+                      className="w-20 h-8"
+                      min={1}
+                    />
+                  </div>
+                </div>
+                <Slider
+                  id="maxTokens"
+                  min={1}
+                  max={maxTokensLimit}
+                  step={1}
+                  value={[maxTokens]}
+                  onValueChange={(v) => setMaxTokens(v[0])}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="temperature">Temperature</Label>
+                    <p className="text-xs text-muted-foreground">控制输出随机性，值越高越随机（范围: 0.0 - 2.0）</p>
+                  </div>
+                  <span className="text-sm font-medium">{temperature?.toFixed(2) ?? "1.00"}</span>
+                </div>
+                <Slider
+                  id="temperature"
+                  min={0}
+                  max={2}
+                  step={0.01}
+                  value={[temperature]}
+                  onValueChange={(v) => setTemperature(v[0])}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="topP">Top P</Label>
+                    <p className="text-xs text-muted-foreground">核采样，控制输出多样性（范围: 0.0 - 1.0）</p>
+                  </div>
+                  <span className="text-sm font-medium">{topP?.toFixed(2) ?? "1.00"}</span>
+                </div>
+                <Slider id="topP" min={0} max={1} step={0.01} value={[topP]} onValueChange={(v) => setTopP(v[0])} />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="frequencyPenalty">Frequency Penalty</Label>
+                    <p className="text-xs text-muted-foreground">降低重复词频率，值越大惩罚越强（范围: -2.0 - 2.0）</p>
+                  </div>
+                  <span className="text-sm font-medium">{frequencyPenalty?.toFixed(2) ?? "0.00"}</span>
+                </div>
+                <Slider
+                  id="frequencyPenalty"
+                  min={-2}
+                  max={2}
+                  step={0.01}
+                  value={[frequencyPenalty]}
+                  onValueChange={(v) => setFrequencyPenalty(v[0])}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="presencePenalty">Presence Penalty</Label>
+                    <p className="text-xs text-muted-foreground">
+                      鼓励谈论新话题，值越大越倾向新内容（范围: -2.0 - 2.0）
+                    </p>
+                  </div>
+                  <span className="text-sm font-medium">{presencePenalty?.toFixed(2) ?? "0.00"}</span>
+                </div>
+                <Slider
+                  id="presencePenalty"
+                  min={-2}
+                  max={2}
+                  step={0.01}
+                  value={[presencePenalty]}
+                  onValueChange={(v) => setPresencePenalty(v[0])}
+                />
+              </div>
+
+              {error && <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+            </div>
             </CardContent>
           )}
         </Card>
@@ -4689,9 +4863,9 @@ markdown
                           )
 
                           return (
-                            <TableRow key={item.timestamp} className="hover:bg-muted/50">\
+                            <TableRow key={item.timestamp} className="hover:bg-muted/50">
                               <TableCell className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap align-top">
-                                <div className="flex flex-col gap-0.5">
+                                <div className="flex flex-col gap-0.5">\
                                   <span>
                                     {new Date(item.timestamp).toLocaleString("zh-CN", {
                                       month: "2-digit",
@@ -4701,6 +4875,7 @@ markdown
                                       second: "2-digit",
                                     })}
                                   </span>
+
                                   <span className="font-mono text-[10px] text-foreground truncate" title={item.model}>
                                     {item.model}
                                   </span>
@@ -4779,12 +4954,12 @@ markdown
                                       >
                                         {expandedCells.has(requestContentId) ? (
                                           <>
-                                            <ChevronUp className="h-3 w-3" />
+                                            <ChevronUp className="size-3" />
                                             收起
                                           </>
                                         ) : (
                                           <>
-                                            <ChevronDown className="h-3 w-3" />
+                                            <ChevronDown className="size-3" />
                                             展开
                                           </>
                                         )}
@@ -4796,127 +4971,144 @@ markdown
 
                               {showRawColumns && (
                                 <TableCell className="px-4 py-3 align-top">
-                                  <pre className="text-xs whitespace-pre-wrap break-words max-h-[160px] overflow-y-auto">
-                                    {item.requestRaw}
-                                  </pre>
-                                </TableCell>
-                              )}
-                              <TableCell className="px-4 py-3 align-top">
-                                <div className="max-w-xl space-y-2">
-                                  {responseImages.length > 0 && (
-                                    <div className="grid grid-cols-3 gap-1 mb-2">
-                                      {responseImages.map((imgUrl, idx) => (
-                                        <div
-                                          key={idx}
-                                          className="relative group rounded border overflow-hidden bg-muted"
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => toggleRawVisibility(`request-raw-${item.timestamp}`)}
+                                    className="h-7 text-xs"
+                                  >
+                                    {visibleRawCells.has(`request-raw-${item.timestamp}`) ? "隐藏" : "显示"}
+                                  </Button>
+                                  {visibleRawCells.has(`request-raw-${item.timestamp}`) && (
+                                    <div className="mt-2 space-y-1">
+                                      <pre
+                                        className={`text-xs bg-muted p-2 rounded whitespace-pre-wrap break-words ${
+                                          !expandAllHistory && !expandedCells.has(`request-raw-${item.timestamp}`)
+                                            ? "line-clamp-2"
+                                            : ""
+                                        }`}
+                                      >
+                                        {item.requestRaw}
+                                      </pre>
+                                      {!expandAllHistory && item.requestRaw.length > 100 && (
+                                        <button
+                                          onClick={() => toggleCellExpansion(`request-raw-${item.timestamp}`)}
+                                          className="text-xs text-primary hover:underline flex items-center gap-1"
                                         >
-                                          <img
-                                            src={imgUrl || "/placeholder.svg"}
-                                            alt={`Response image ${idx + 1}`}
-                                            className="w-full h-16 object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                            onClick={() =>
-                                              setZoomedImage({
-                                                id: `history-${item.timestamp}-${idx}`,
-                                                type: "url",
-                                                base64: imgUrl,
-                                              })
-                                            }
-                                          />
-                                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                            <Button
-                                              type="button"
-                                              variant="secondary"
-                                              size="sm"
-                                              onClick={() =>
-                                                setZoomedImage({
-                                                  id: `history-${item.timestamp}-${idx}`,
-                                                  type: "url",
-                                                  base64: imgUrl,
-                                                })
-                                              }
-                                              title="放大查看"
-                                            >
-                                              <ZoomIn className="h-3 w-3" />
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      ))}
+                                          {expandedCells.has(`request-raw-${item.timestamp}`) ? (
+                                            <>
+                                              <ChevronUp className="size-3" />
+                                              收起
+                                            </>
+                                          ) : (
+                                            <>
+                                              <ChevronDown className="size-3" />
+                                              展开
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
                                     </div>
                                   )}
-                                  <pre
-                                    className={`text-xs whitespace-pre-wrap break-words ${
-                                      !expandResponseContent && !expandedCells.has(responseContentId)
-                                        ? "line-clamp-2"
-                                        : ""
-                                    }`}
-                                  >
-                                    {renderContentWithCodeBlocks(item.responseContent, item.timestamp.toString(), expandResponseContent)}
-                                  </pre>
-                                  {!expandResponseContent && item.responseContent.length > 100 && (
-                                    <button
-                                      onClick={() => toggleCellExpansion(responseContentId)}
-                                      className="text-xs text-primary hover:underline flex items-center gap-1"
-                                    >
-                                      {expandedCells.has(responseContentId) ? (
-                                        <>
-                                          <ChevronUp className="h-3 w-3" />
-                                          收起
-                                        </>
-                                      ) : (
-                                        <>
-                                          <ChevronDown className="h-3 w-3" />
-                                          展开
-                                        </>
-                                      )}
-                                    </button>
-                                  )}
+                                </TableCell>
+                              )}
+                              <TableCell>
+                                <div className="max-w-xl">
+                                  <div className="text-xs whitespace-pre-wrap break-words relative">
+                                    {renderContentWithCodeBlocks(
+                                      item.responseContent,
+                                      responseContentId,
+                                      expandResponseContent || expandedCells.has(responseContentId),
+                                      responseImages, // Pass extracted images
+                                    )}
+                                  </div>
+                                  {(() => {
+                                    const hasCodeBlock = item.responseContent.includes("\`\`\`")
+                                    const codeBlockLines = hasCodeBlock
+                                      ? (item.responseContent
+                                          .split("\`\`\`")
+                                          .filter((_, i) => i % 2 === 1)[0]
+                                          ?.split("\n")?.length ?? 0)
+                                      : 0
+                                    const shouldShowToggle =
+                                      item.responseContent.length > 100 || (hasCodeBlock && codeBlockLines > 3)
+                                    return (
+                                      !expandResponseContent &&
+                                      shouldShowToggle && (
+                                        <button
+                                          onClick={() => toggleCellExpansion(responseContentId)}
+                                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                                        >
+                                          {expandedCells.has(responseContentId) ? (
+                                            <>
+                                              <ChevronUp className="size-3" />
+                                              收起
+                                            </>
+                                          ) : (
+                                            <>
+                                              <ChevronDown className="size-3" />
+                                              展开
+                                            </>
+                                          )}
+                                        </button>
+                                      )
+                                    )
+                                  })()}
                                 </div>
                               </TableCell>
 
                               {showRawColumns && (
                                 <TableCell className="px-4 py-3 align-top">
-                                  <pre className="text-xs whitespace-pre-wrap break-words max-h-[160px] overflow-y-auto">
-                                    {item.responseRaw}
-                                  </pre>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => toggleRawVisibility(`response-raw-${item.timestamp}`)}
+                                    className="h-7 text-xs"
+                                  >
+                                    {visibleRawCells.has(`response-raw-${item.timestamp}`) ? "隐藏" : "显示"}
+                                  </Button>
+                                  {visibleRawCells.has(`response-raw-${item.timestamp}`) && (
+                                    <div className="mt-2 space-y-1">
+                                      <pre
+                                        className={`text-xs bg-muted p-2 rounded whitespace-pre-wrap break-words ${
+                                          !expandAllHistory && !expandedCells.has(`response-raw-${item.timestamp}`)
+                                            ? "line-clamp-2"
+                                            : ""
+                                        }`}
+                                      >
+                                        {item.responseRaw}
+                                      </pre>
+                                      {!expandAllHistory && item.responseRaw.length > 100 && (
+                                        <button
+                                          onClick={() => toggleCellExpansion(`response-raw-${item.timestamp}`)}
+                                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                                        >
+                                          {expandedCells.has(`response-raw-${item.timestamp}`) ? (
+                                            <>
+                                              <ChevronUp className="size-3" />
+                                              收起
+                                            </>
+                                          ) : (
+                                            <>
+                                              <ChevronDown className="size-3" />
+                                              展开
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                 </TableCell>
                               )}
                               <TableCell className="px-4 py-3 text-center align-top">
-                                <div className="flex items-center justify-center gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleCopy(item.requestRaw, "request")}
-                                    className="h-7 w-7 p-0"
-                                    title="复制请求 Raw"
-                                  >
-                                    {requestCopyText === "已复制!" ? (
-                                      <Check className="size-3" />
-                                    ) : (
-                                      <Copy className="size-3" />
-                                    )}
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleCopy(item.responseRaw, "response")}
-                                    className="h-7 w-7 p-0"
-                                    title="复制响应 Raw"
-                                  >
-                                    {responseCopyText === "已复制!" ? (
-                                      <Check className="size-3" />
-                                    ) : (
-                                      <Copy className="size-3" />
-                                    )}
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleDeleteHistoryItem(item.id)}
-                                    className="h-7 w-7 p-0"
-                                  >
-                                    <Trash2 className="size-4" />
-                                  </Button>
-                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteHistoryItem(item.id)}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
                               </TableCell>
                             </TableRow>
                           )
@@ -4927,57 +5119,139 @@ markdown
                 </div>
 
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between mt-4">
-                    <div className="text-sm text-muted-foreground">
-                      第 {currentPage} / {totalPages} 页
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                        disabled={currentPage === 1}
-                      >
-                        <ChevronLeft className="size-4" />
-                        上一页
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={currentPage === totalPages}
-                      >
-                        下一页
-                        <ChevronRight className="size-4" />
-                      </Button>
-                    </div>
+                  <div className="flex items-center justify-center gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {currentPage} / {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      下一页
+                      <ChevronRight className="size-4" />
+                    </Button>
                   </div>
                 )}
               </>
             )}
           </CardContent>
         </Card>
-      </main>
-      {zoomedImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4">
-          <div className="relative max-w-full max-h-[80vh] overflow-hidden rounded-lg shadow-xl">
-            <img
-              src={zoomedImage.base64 || zoomedImage.url}
-              alt={zoomedImage.name || "Zoomed Image"}
-              className="block max-w-full max-h-[80vh] object-contain"
-            />
-            <Button
-              variant="outline"
-              size="icon"
-              className="absolute top-2 right-2 rounded-full bg-background/70 backdrop-blur"
-              onClick={() => setZoomedImage(null)}
-              aria-label="Close"
-            >
-              <X className="size-6" />
-            </Button>
-          </div>
+
+        {/* Request and Response Details - Side by side */}
+        <div className="grid grid-cols-2 gap-6">
+          <Card className="flex flex-col h-[600px]">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>请求详情</CardTitle>
+                  <CardDescription>完整的 cURL 命令（包含明文 API Key）</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => requestData && handleCopy(requestData, "request")}
+                  disabled={!requestData}
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  {requestCopyText}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden">
+              <div className="h-full overflow-auto rounded-lg bg-muted p-4">
+                <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-words">
+                  {requestData || '点击"开始测试"查看 cURL 命令...'}
+                </pre>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="flex flex-col h-[600px]">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>响应详情</CardTitle>
+                  <CardDescription>API 返回的完整响应</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  {responseDuration !== null && (
+                    <div className="text-xs text-muted-foreground font-mono">用时: {responseDuration}ms</div>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (responseData) {
+                        const cleanedResponse = responseData
+                          .split("\n")
+                          .filter((line) => line.trim() !== "")
+                          .join("\n")
+                        handleCopy(cleanedResponse, "response")
+                      }
+                    }}
+                    disabled={!responseData}
+                  >
+                    <Copy className="h-4 w-4 mr-1" />
+                    {responseCopyText}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden">
+              <div className="h-full overflow-auto rounded-lg bg-muted p-4">
+                <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-words">
+                  {responseData
+                    ? responseData
+                        .split("\n")
+                        .filter((line) => line.trim() !== "")
+                        .join("\n")
+                    : "等待响应..."}
+                </pre>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      )}
+      </main>
+
+      <Dialog open={!!zoomedImage} onOpenChange={(open) => !open && setZoomedImage(null)}>
+        <DialogContent className="max-w-5xl w-full p-0 overflow-hidden">
+          {zoomedImage && (
+            <div className="relative w-full flex flex-col">
+              <div className="flex-1 flex items-center justify-center bg-black/90 p-4">
+                <img
+                  src={zoomedImage.base64 || zoomedImage.url}
+                  alt={zoomedImage.name || "Zoomed Image"}
+                  className="max-w-full max-h-[80vh] object-contain"
+                />
+              </div>
+              <div className="bg-background border-t p-3 flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{zoomedImage.name || "未命名图片"}</p>
+                  {zoomedImage.type === "url" && zoomedImage.url && (
+                    <p className="text-xs text-muted-foreground truncate">{zoomedImage.url}</p>
+                  )}
+                  {zoomedImage.type === "file" && <p className="text-xs text-muted-foreground">本地上传图片</p>}
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setZoomedImage(null)}>
+                  关闭
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Toaster />
     </div>
   )
 }

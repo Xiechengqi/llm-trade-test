@@ -1139,13 +1139,48 @@ markdown
               range = "1y"
           }
 
-          // CHANGE: Use local API route instead of direct Yahoo Finance call to avoid CORS
-          const yahooUrl = `/api/stock-kline?symbol=${stockSymbol}&interval=${yahooInterval}&range=${range}`
+          const yahooBaseUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${stockSymbol}?interval=${yahooInterval}&range=${range}`
 
-          const response = await fetch(yahooUrl)
+          const corsProxies = [
+            // web.818233.xyz - primary (用户提供的代理)
+            `https://web.818233.xyz/${yahooBaseUrl}`,
+            // ThingProxy - secondary
+            `https://thingproxy.freeboard.io/fetch/${yahooBaseUrl}`,
+            // allorigins - tertiary
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooBaseUrl)}`,
+          ]
 
-          if (!response.ok) {
-            throw new Error(`Failed to fetch stock data for ${stockSymbol}`)
+          let response: Response | null = null
+          let lastError: Error | null = null
+
+          for (let i = 0; i < corsProxies.length; i++) {
+            const proxyUrl = corsProxies[i]
+            console.log(`[v0] Trying CORS proxy ${i + 1}/${corsProxies.length}: ${proxyUrl.substring(0, 50)}...`)
+            try {
+              response = await fetch(proxyUrl, {
+                headers: {
+                  Accept: "application/json",
+                },
+              })
+              console.log(`[v0] Proxy ${i + 1} response status: ${response.status}`)
+              if (response.ok) {
+                console.log(`[v0] Successfully fetched stock data using proxy ${i + 1}`)
+                break
+              } else {
+                lastError = new Error(`HTTP ${response.status}: ${response.statusText}`)
+                response = null
+              }
+            } catch (err) {
+              console.log(`[v0] Proxy ${i + 1} failed:`, err)
+              lastError = err instanceof Error ? err : new Error(String(err))
+              response = null
+              continue
+            }
+          }
+
+          if (!response) {
+            console.log(`[v0] All CORS proxies failed, last error:`, lastError)
+            throw lastError || new Error(`Failed to fetch stock data for ${stockSymbol}`)
           }
 
           const yahooData = await response.json()
@@ -2208,7 +2243,7 @@ markdown
 
   const runProbeTest = async () => {
     if (!apiKey || !model || !fullApiPath) return // Added fullApiPath check
-    if (isProbeTesting) return // 防止重复点击
+    if (isProbeTesting) return // Prevent multiple clicks
 
     setIsProbeTesting(true)
     toast({
@@ -2625,57 +2660,8 @@ markdown
       }
     }
 
-    // Remove context from userMessage if it's already there (to avoid duplication)
-    let cleanUserMessage = finalUserMessage
-    if (effectiveContext && finalUserMessage) {
-      // Check if userMessage starts with context (try to parse and compare JSON objects)
-      try {
-        const contextJson = JSON.parse(effectiveContext)
-        // Check if userMessage starts with context JSON (compressed or uncompressed)
-        const contextStr = effectiveContext.trim()
-        const compressedContextStr = compressedContext.trim()
-        const separator = "\n\n"
-
-        // First check if finalUserMessage equals context (exact match)
-        if (finalUserMessage.trim() === contextStr || finalUserMessage.trim() === compressedContextStr) {
-          cleanUserMessage = ""
-        } else if (finalUserMessage.startsWith(contextStr + separator)) {
-          // Remove uncompressed context from the beginning
-          cleanUserMessage = finalUserMessage.substring(contextStr.length + separator.length)
-        } else if (finalUserMessage.startsWith(compressedContextStr + separator)) {
-          // Remove compressed context from the beginning
-          cleanUserMessage = finalUserMessage.substring(compressedContextStr.length + separator.length)
-        } else {
-          // Try to find and remove JSON that matches context (by parsing and comparing)
-          const jsonMatch = finalUserMessage.match(/^(\{[\s\S]*?\})\n\n/)
-          if (jsonMatch) {
-            try {
-              const parsedUserJson = JSON.parse(jsonMatch[1])
-              // Compare JSON objects (deep comparison of keys and values)
-              if (JSON.stringify(parsedUserJson) === JSON.stringify(contextJson)) {
-                // Found matching context JSON, remove it
-                cleanUserMessage = finalUserMessage.substring(jsonMatch[0].length)
-              }
-            } catch (e) {
-              // Not valid JSON or doesn't match, keep original
-            }
-          }
-        }
-      } catch (error) {
-        // Context is not JSON, just check string match
-        const separator = "\n\n"
-        const trimmedFinalUserMessage = finalUserMessage.trim()
-        const trimmedContext = effectiveContext.trim()
-        if (trimmedFinalUserMessage === trimmedContext) {
-          cleanUserMessage = ""
-        } else if (finalUserMessage.startsWith(effectiveContext + separator)) {
-          cleanUserMessage = finalUserMessage.substring(effectiveContext.length + separator.length)
-        }
-      }
-    }
-
     // Merge context and user message
-    const combinedMessage = compressedContext ? `${compressedContext}\n\n${cleanUserMessage}` : cleanUserMessage
+    const combinedMessage = compressedContext ? `${compressedContext}\n\n${finalUserMessage}` : finalUserMessage
 
     // Debug: Log combined message to verify compression
     if (compressedContext && compressedContext !== context) {

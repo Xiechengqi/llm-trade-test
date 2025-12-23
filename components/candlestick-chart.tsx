@@ -11,6 +11,7 @@ import {
   type Time,
   type SeriesMarker,
   type ISeriesMarkersPluginApi,
+  LineSeries,
 } from "lightweight-charts"
 import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -18,6 +19,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Input } from "@/components/ui/input"
+import { IndicatorsDropdown, type IndicatorConfig } from "@/components/indicators-dropdown"
+import {
+  calculateMA,
+  calculateEMA,
+  calculateMACD,
+  calculateBOLL,
+  calculateRSI,
+  calculateKDJ,
+  calculateATR,
+  calculateVWAP,
+  calculateOBV,
+  calculateMFI,
+  calculateVPT,
+} from "@/lib/indicators"
 
 export interface KlineData {
   time: number
@@ -43,7 +58,7 @@ interface CandlestickChartProps {
   limit?: number
   onLimitChange?: (limit: number) => void
   onForceReload?: () => void
-  markedCandleTime?: number | null
+  markedCandleTime: number | null
   onMarkedCandleTimeChange?: (time: number | null) => void
 }
 
@@ -69,7 +84,23 @@ export function CandlestickChart({
   const chartRef = useRef<IChartApi | null>(null)
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
   const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
+  const indicatorSeriesRef = useRef<Map<number, ISeriesApi<"Line">>>(new Map())
   const [tradingPairSearch, setTradingPairSearch] = useState("")
+
+  const [activeIndicators, setActiveIndicators] = useState<IndicatorConfig[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("klineActiveIndicators")
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (error) {
+          console.error("[v0] Failed to parse saved indicators:", error)
+          return []
+        }
+      }
+    }
+    return []
+  })
 
   const [customInterval, setCustomInterval] = useState("")
   const [isCustomInterval, setIsCustomInterval] = useState(false)
@@ -192,6 +223,12 @@ export function CandlestickChart({
         markersPluginRef.current.detach()
         markersPluginRef.current = null
       }
+      indicatorSeriesRef.current.forEach((series) => {
+        if (chartRef.current) {
+          chartRef.current.removeSeries(series)
+        }
+      })
+      indicatorSeriesRef.current.clear()
       if (chartRef.current) {
         chartRef.current.remove()
         chartRef.current = null
@@ -305,42 +342,318 @@ export function CandlestickChart({
     }
   }, [markedCandleTime])
 
-  const handleCustomIntervalSubmit = () => {
-    if (customInterval.trim()) {
-      onIntervalChange(customInterval.trim())
-      setIsCustomInterval(true)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (activeIndicators.length > 0) {
+        localStorage.setItem("klineActiveIndicators", JSON.stringify(activeIndicators))
+      } else {
+        localStorage.removeItem("klineActiveIndicators")
+      }
     }
+  }, [activeIndicators])
+
+  useEffect(() => {
+    if (!chartRef.current || data.length === 0) return
+
+    // Remove old indicator series
+    indicatorSeriesRef.current.forEach((series) => {
+      if (chartRef.current) {
+        chartRef.current.removeSeries(series)
+      }
+    })
+    indicatorSeriesRef.current.clear()
+
+    // Add new indicator series
+    activeIndicators.forEach((indicator, index) => {
+      if (!chartRef.current || !indicator.visible) return
+
+      if (indicator.type === "MA" && indicator.params.period) {
+        const maData = calculateMA(data, indicator.params.period)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: indicator.params.color || "#2563eb",
+          lineWidth: 2,
+          title: `MA(${indicator.params.period})`,
+        })
+        series.setData(
+          maData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.value,
+          })),
+        )
+        indicatorSeriesRef.current.set(index, series)
+      } else if (indicator.type === "EMA" && indicator.params.period) {
+        const emaData = calculateEMA(data, indicator.params.period)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: indicator.params.color || "#f59e0b",
+          lineWidth: 2,
+          title: `EMA(${indicator.params.period})`,
+        })
+        series.setData(
+          emaData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.value,
+          })),
+        )
+        indicatorSeriesRef.current.set(index, series)
+      } else if (
+        indicator.type === "MACD" &&
+        indicator.params.fastPeriod &&
+        indicator.params.slowPeriod &&
+        indicator.params.signalPeriod
+      ) {
+        const macdData = calculateMACD(
+          data,
+          indicator.params.fastPeriod,
+          indicator.params.slowPeriod,
+          indicator.params.signalPeriod,
+        )
+
+        // MACD line
+        const macdSeries = chartRef.current.addSeries(LineSeries, {
+          color: "#2563eb",
+          lineWidth: 2,
+          title: "MACD",
+          priceScaleId: "macd",
+        })
+        macdSeries.setData(
+          macdData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.macd,
+          })),
+        )
+        indicatorSeriesRef.current.set(index * 3, macdSeries)
+
+        // Signal line
+        const signalSeries = chartRef.current.addSeries(LineSeries, {
+          color: "#f59e0b",
+          lineWidth: 2,
+          title: "Signal",
+          priceScaleId: "macd",
+        })
+        signalSeries.setData(
+          macdData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.signal,
+          })),
+        )
+        indicatorSeriesRef.current.set(index * 3 + 1, signalSeries)
+      } else if (indicator.type === "BOLL" && indicator.params.period && indicator.params.stdDev) {
+        const bollData = calculateBOLL(data, indicator.params.period, indicator.params.stdDev)
+
+        // Upper band
+        const upperSeries = chartRef.current.addSeries(LineSeries, {
+          color: "#8b5cf6",
+          lineWidth: 1,
+          lineStyle: 2, // Dashed
+          title: "BOLL Upper",
+        })
+        upperSeries.setData(
+          bollData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.upper,
+          })),
+        )
+        indicatorSeriesRef.current.set(index * 3, upperSeries)
+
+        // Middle band
+        const middleSeries = chartRef.current.addSeries(LineSeries, {
+          color: "#8b5cf6",
+          lineWidth: 2,
+          title: "BOLL Middle",
+        })
+        middleSeries.setData(
+          bollData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.middle,
+          })),
+        )
+        indicatorSeriesRef.current.set(index * 3 + 1, middleSeries)
+
+        // Lower band
+        const lowerSeries = chartRef.current.addSeries(LineSeries, {
+          color: "#8b5cf6",
+          lineWidth: 1,
+          lineStyle: 2, // Dashed
+          title: "BOLL Lower",
+        })
+        lowerSeries.setData(
+          bollData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.lower,
+          })),
+        )
+        indicatorSeriesRef.current.set(index * 3 + 2, lowerSeries)
+      } else if (indicator.type === "RSI" && indicator.params.period) {
+        const rsiData = calculateRSI(data, indicator.params.period)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: indicator.params.color || "#ec4899",
+          lineWidth: 2,
+          title: `RSI(${indicator.params.period})`,
+          priceScaleId: "rsi",
+        })
+        series.setData(
+          rsiData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.value,
+          })),
+        )
+        indicatorSeriesRef.current.set(index, series)
+      } else if (indicator.type === "KDJ" && indicator.params.period) {
+        const kdjData = calculateKDJ(
+          data,
+          indicator.params.period,
+          indicator.params.kPeriod || 3,
+          indicator.params.dPeriod || 3,
+        )
+
+        // K line
+        const kSeries = chartRef.current.addSeries(LineSeries, {
+          color: "#2563eb",
+          lineWidth: 2,
+          title: "K",
+          priceScaleId: "kdj",
+        })
+        kSeries.setData(
+          kdjData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.k,
+          })),
+        )
+        indicatorSeriesRef.current.set(index * 3, kSeries)
+
+        // D line
+        const dSeries = chartRef.current.addSeries(LineSeries, {
+          color: "#f59e0b",
+          lineWidth: 2,
+          title: "D",
+          priceScaleId: "kdj",
+        })
+        dSeries.setData(
+          kdjData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.d,
+          })),
+        )
+        indicatorSeriesRef.current.set(index * 3 + 1, dSeries)
+
+        // J line
+        const jSeries = chartRef.current.addSeries(LineSeries, {
+          color: "#ec4899",
+          lineWidth: 2,
+          title: "J",
+          priceScaleId: "kdj",
+        })
+        jSeries.setData(
+          kdjData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.j,
+          })),
+        )
+        indicatorSeriesRef.current.set(index * 3 + 2, jSeries)
+      } else if (indicator.type === "ATR" && indicator.params.period) {
+        const atrData = calculateATR(data, indicator.params.period)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: indicator.params.color || "#06b6d4",
+          lineWidth: 2,
+          title: `ATR(${indicator.params.period})`,
+          priceScaleId: "atr",
+        })
+        series.setData(
+          atrData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.value,
+          })),
+        )
+        indicatorSeriesRef.current.set(index, series)
+      } else if (indicator.type === "VOL") {
+        // VOL series
+        const volData = data.map((item) => ({
+          time: (item.time / 1000) as Time,
+          value: item.volume,
+        }))
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: "#6366f1",
+          lineWidth: 2,
+          title: "VOL",
+          priceScaleId: "vol",
+        })
+        series.setData(volData)
+        indicatorSeriesRef.current.set(index, series)
+      } else if (indicator.type === "VWAP") {
+        const vwapData = calculateVWAP(data)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: "#10b981",
+          lineWidth: 2,
+          title: "VWAP",
+        })
+        series.setData(
+          vwapData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.value,
+          })),
+        )
+        indicatorSeriesRef.current.set(index, series)
+      } else if (indicator.type === "OBV") {
+        const obvData = calculateOBV(data)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: "#6366f1",
+          lineWidth: 2,
+          title: "OBV",
+          priceScaleId: "obv",
+        })
+        series.setData(
+          obvData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.value,
+          })),
+        )
+        indicatorSeriesRef.current.set(index, series)
+      } else if (indicator.type === "MFI" && indicator.params.period) {
+        const mfiData = calculateMFI(data, indicator.params.period)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: indicator.params.color || "#84cc16",
+          lineWidth: 2,
+          title: `MFI(${indicator.params.period})`,
+          priceScaleId: "mfi",
+        })
+        series.setData(
+          mfiData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.value,
+          })),
+        )
+        indicatorSeriesRef.current.set(index, series)
+      } else if (indicator.type === "VPT") {
+        const vptData = calculateVPT(data)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: "#a855f7",
+          lineWidth: 2,
+          title: "VPT",
+          priceScaleId: "vpt",
+        })
+        series.setData(
+          vptData.map((item) => ({
+            time: (item.time / 1000) as Time,
+            value: item.value,
+          })),
+        )
+        indicatorSeriesRef.current.set(index, series)
+      }
+    })
+  }, [data, activeIndicators])
+
+  const handleAddIndicator = (config: IndicatorConfig) => {
+    setActiveIndicators((prev) => [...prev, config])
   }
 
-  const handleReloadChart = () => {
-    let timestamp: number
-
-    if (!selectedDate && !selectedTime) {
-      // Use current time if both fields are empty
-      timestamp = Date.now()
-    } else if (selectedDate && selectedTime) {
-      // Use selected date and time
-      const datetime = `${selectedDate}T${selectedTime}`
-      timestamp = new Date(datetime).getTime()
-    } else {
-      // If only one field is filled, don't set timestamp
-      timestamp = 0
-    }
-
-    if (timestamp > 0 && onTimePointChange) {
-      onTimePointChange(timestamp)
-    }
-
-    if (onForceReload) {
-      onForceReload()
-    }
+  const handleToggleIndicator = (index: number) => {
+    setActiveIndicators((prev) =>
+      prev.map((indicator, i) => (i === index ? { ...indicator, visible: !indicator.visible } : indicator)),
+    )
   }
 
-  const handleClearDateTime = () => {
-    setSelectedDate("")
-    setSelectedTime("")
-    localStorage.removeItem("klineSelectedDate")
-    localStorage.removeItem("klineSelectedTime")
+  const handleRemoveIndicator = (index: number) => {
+    setActiveIndicators((prev) => prev.filter((_, i) => i !== index))
   }
 
   return (
@@ -362,6 +675,13 @@ export function CandlestickChart({
           </Button>
         </div>
       )}
+
+      <IndicatorsDropdown
+        onAddIndicator={handleAddIndicator}
+        activeIndicators={activeIndicators}
+        onToggleIndicator={handleToggleIndicator}
+        onRemoveIndicator={handleRemoveIndicator}
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <Popover>
@@ -436,7 +756,7 @@ export function CandlestickChart({
                 onChange={(e) => setCustomInterval(e.target.value)}
                 className="w-[120px] h-9"
               />
-              <Button size="sm" onClick={handleCustomIntervalSubmit} variant="outline">
+              <Button size="sm" onClick={() => onIntervalChange(customInterval.trim())} variant="outline">
                 应用
               </Button>
             </div>
@@ -480,7 +800,12 @@ export function CandlestickChart({
           <Button
             size="sm"
             variant="outline"
-            onClick={handleClearDateTime}
+            onClick={() => {
+              setSelectedDate("")
+              setSelectedTime("")
+              localStorage.removeItem("klineSelectedDate")
+              localStorage.removeItem("klineSelectedTime")
+            }}
             className="h-9 px-3 bg-transparent"
             title="清除日期时间"
           >
@@ -501,7 +826,29 @@ export function CandlestickChart({
           <Button
             size="sm"
             variant="outline"
-            onClick={handleReloadChart}
+            onClick={() => {
+              let timestamp: number
+
+              if (!selectedDate && !selectedTime) {
+                // Use current time if both fields are empty
+                timestamp = Date.now()
+              } else if (selectedDate && selectedTime) {
+                // Use selected date and time
+                const datetime = `${selectedDate}T${selectedTime}`
+                timestamp = new Date(datetime).getTime()
+              } else {
+                // If only one field is filled, don't set timestamp
+                timestamp = 0
+              }
+
+              if (timestamp > 0 && onTimePointChange) {
+                onTimePointChange(timestamp)
+              }
+
+              if (onForceReload) {
+                onForceReload()
+              }
+            }}
             disabled={isLoading}
             className="h-9 px-3 bg-transparent"
             title="重载图表数据"

@@ -878,9 +878,9 @@ markdown
           const timeStr = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")} ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`
           return `时间: ${timeStr}, 开: ${item.open}, 高: ${item.high}, 低: ${item.low}, 收: ${item.close}, 量: ${item.volume}`
         })
-        .join("\n")
+        .join(" | ")
 
-      const message = `交易对: ${tradingPair}\n周期: ${klineInterval}\n\nK线数据:\n${formattedData}`
+      const message = `交易对: ${tradingPair} | 周期: ${klineInterval} | K线数据: ${formattedData}`
       setUserMessage(message)
 
       // Mark the clicked candle's time
@@ -2196,7 +2196,7 @@ markdown
 
           if (loadedData && loadedData.length > 0) {
             const klineDataText =
-              `【K线数据】\n交易对: ${tradingPairRef.current}\n周期: ${klineIntervalRef.current}\n数据量: ${loadedData.length}条\n\n` +
+              `交易对: ${tradingPairRef.current} | 周期: ${klineIntervalRef.current} | 数据量: ${loadedData.length}条 | K线数据: ` +
               loadedData
                 .map((candle, index) => {
                   const date = new Date(candle.time)
@@ -2211,7 +2211,7 @@ markdown
                   })
                   return `${index + 1}. 时间: ${timeStr}, 开: ${candle.open}, 高: ${candle.high}, 低: ${candle.low}, 收: ${candle.close}, 量: ${candle.volume}`
                 })
-                .join("\n")
+                .join(" | ")
 
             // Update state for UI display
             setUserMessage(klineDataText)
@@ -2303,7 +2303,7 @@ markdown
 
         if (loadedData && loadedData.length > 0) {
           const klineDataText =
-            `【K线数据】\n交易对: ${tradingPair}\n周期: ${klineInterval}\n数据量: ${loadedData.length}条\n\n` +
+            `交易对: ${tradingPair} | 周期: ${klineInterval} | 数据量: ${loadedData.length}条 | K线数据: ` +
             loadedData
               .map((candle, index) => {
                 const date = new Date(candle.time) // Use candle.time directly for UTC
@@ -2318,7 +2318,7 @@ markdown
                 })
                 return `${index + 1}. 时间: ${timeStr}, 开: ${candle.open}, 高: ${candle.high}, 低: ${candle.low}, 收: ${candle.close}, 量: ${candle.volume}`
               })
-              .join("\n")
+              .join(" | ")
 
           setUserMessage(klineDataText)
           console.log("[v0] Overwrote user message with K-line data, length:", klineDataText.length)

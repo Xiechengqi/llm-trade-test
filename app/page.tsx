@@ -575,6 +575,7 @@ markdown
   const [apiKey, setApiKey] = useState(DEFAULT_VALUES.apiKey)
   const [showApiKey, setShowApiKey] = useState(false)
   const [isPromptExpanded, setIsPromptExpanded] = useState(false)
+  const [isContextExpanded, setIsContextExpanded] = useState(false)
   const [isSystemPromptExpanded, setIsSystemPromptExpanded] = useState(false)
   const [model, setModel] = useState("")
   const [openrouterModels, setOpenrouterModels] = useState<OpenRouterModel[]>([])
@@ -606,6 +607,7 @@ markdown
   const [apiPath, setApiPath] = useState(DEFAULT_VALUES.apiPath) // Added apiPath state
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_VALUES.systemPrompt) // Added systemPrompt state
   const [userMessage, setUserMessage] = useState(DEFAULT_VALUES.userMessage) // Added userMessage state
+  const [context, setContext] = useState("") // Context for K-line data and other context information
   const [promptFilePath, setPromptFilePath] = useState(DEFAULT_VALUES.promptFilePath)
   const [enablePromptFile, setEnablePromptFile] = useState(DEFAULT_VALUES.enablePromptFile) // Add enablePromptFile state
   const [isPromptFromLocalFile, setIsPromptFromLocalFile] = useState(false)
@@ -886,8 +888,7 @@ markdown
   // Handle candle click - put K-line data into user message
   const handleCandleClick = useCallback(
     (dataBeforeClick: KlineData[], clickedCandle: KlineData) => {
-      const klineJson = JSON.stringify(
-        {
+      const klineJson = JSON.stringify({
           tradingPair,
           interval: klineInterval,
           dataCount: dataBeforeClick.length,
@@ -899,22 +900,19 @@ markdown
             close: item.close,
             volume: item.volume,
           })),
-        },
-        null,
-        2,
-      )
+        })
 
-      setUserMessage(klineJson)
+      setContext(klineJson)
 
       // Mark the clicked candle's time
       setMarkedCandleTime(clickedCandle.time)
 
       toast({
         title: "K线数据已填入",
-        description: `已将 ${dataBeforeClick.length} 条K线数据填入消息框`,
+        description: `已将 ${dataBeforeClick.length} 条K线数据填入上下文`,
       })
     },
-    [tradingPair, klineInterval, toast],
+    [tradingPair, klineInterval, toast, formatTimeToUTC8],
   )
 
   //获取当前选中的模型信息（提前定义，供 fullApiPath 使用）
@@ -1739,7 +1737,7 @@ markdown
     }
   }, [provider])
 
-  const handleTest = async (messageOverride?: string) => {
+  const handleTest = async (messageOverride?: string, contextOverride?: string) => {
     // if (loading) return // Prevent multiple simultaneous tests
     console.log("[v0] handleTest called, loading:", loading)
 
@@ -1891,13 +1889,93 @@ markdown
 
     console.log("[v0] Final user message length:", finalUserMessage.length)
 
+    // Use contextOverride if provided (for immediate context updates without waiting for state)
+    const effectiveContext = contextOverride !== undefined ? contextOverride : context
+
+    // Compress context JSON to single line to save tokens
+    let compressedContext = effectiveContext
+    if (effectiveContext && effectiveContext.trim()) {
+      try {
+        // Try to parse and stringify JSON to compress it (remove formatting)
+        const trimmedContext = effectiveContext.trim()
+        const parsed = JSON.parse(trimmedContext)
+        // Use JSON.stringify without formatting parameters to compress to single line
+        compressedContext = JSON.stringify(parsed)
+        console.log("[v0] Context compressed successfully. Original length:", trimmedContext.length, "Compressed length:", compressedContext.length)
+        console.log("[v0] Compressed context preview:", compressedContext.substring(0, 150))
+      } catch (error) {
+        // If not valid JSON, use context as is
+        console.log("[v0] Context is not valid JSON, error:", error)
+        console.log("[v0] Context preview:", effectiveContext.substring(0, 150))
+        compressedContext = effectiveContext
+      }
+    }
+
+    // Remove context from userMessage if it's already there (to avoid duplication)
+    let cleanUserMessage = finalUserMessage
+    if (effectiveContext && finalUserMessage) {
+      // Check if userMessage starts with context (try to parse and compare JSON objects)
+      try {
+        const contextJson = JSON.parse(effectiveContext)
+        // Check if userMessage starts with context JSON (compressed or uncompressed)
+        const contextStr = effectiveContext.trim()
+        const compressedContextStr = compressedContext.trim()
+        const separator = '\n\n'
+
+        // First check if finalUserMessage equals context (exact match)
+        if (finalUserMessage.trim() === contextStr || finalUserMessage.trim() === compressedContextStr) {
+          cleanUserMessage = ""
+        } else if (finalUserMessage.startsWith(contextStr + separator)) {
+          // Remove uncompressed context from the beginning
+          cleanUserMessage = finalUserMessage.substring(contextStr.length + separator.length)
+        } else if (finalUserMessage.startsWith(compressedContextStr + separator)) {
+          // Remove compressed context from the beginning
+          cleanUserMessage = finalUserMessage.substring(compressedContextStr.length + separator.length)
+        } else {
+          // Try to find and remove JSON that matches context (by parsing and comparing)
+          const jsonMatch = finalUserMessage.match(/^(\{[\s\S]*?\})\n\n/)
+          if (jsonMatch) {
+            try {
+              const parsedUserJson = JSON.parse(jsonMatch[1])
+              // Compare JSON objects (deep comparison of keys and values)
+              if (JSON.stringify(parsedUserJson) === JSON.stringify(contextJson)) {
+                // Found matching context JSON, remove it
+                cleanUserMessage = finalUserMessage.substring(jsonMatch[0].length)
+              }
+            } catch (e) {
+              // Not valid JSON or doesn't match, keep original
+            }
+          }
+        }
+      } catch (error) {
+        // Context is not JSON, just check string match
+        const separator = '\n\n'
+        const trimmedFinalUserMessage = finalUserMessage.trim()
+        const trimmedContext = effectiveContext.trim()
+        if (trimmedFinalUserMessage === trimmedContext) {
+          cleanUserMessage = ""
+        } else if (finalUserMessage.startsWith(effectiveContext + separator)) {
+          cleanUserMessage = finalUserMessage.substring(effectiveContext.length + separator.length)
+        }
+      }
+    }
+
+    // Merge context and user message
+    const combinedMessage = compressedContext ? `${compressedContext}\n\n${cleanUserMessage}` : cleanUserMessage
+    
+    // Debug: Log combined message to verify compression
+    if (compressedContext && compressedContext !== context) {
+      console.log("[v0] Context was compressed. Original length:", context.length, "Compressed length:", compressedContext.length)
+      console.log("[v0] Compressed context preview:", compressedContext.substring(0, 200))
+    }
+
     // Prepare the user message content based on whether there are images
     const userContent: Array<{ type: "text" | "image_url"; text?: string; image_url?: { url: string } }> =
       currentImages.length > 0
         ? [
             {
               type: "text",
-              text: finalUserMessage,
+              text: combinedMessage,
             },
             ...currentImages.map((img) => ({
               type: "image_url" as const,
@@ -1907,7 +1985,7 @@ markdown
         : [
             {
               type: "text",
-              text: finalUserMessage,
+              text: combinedMessage,
             },
           ]
 
@@ -2158,7 +2236,7 @@ markdown
         })
       }
 
-      const errorResponse = JSON.stringify({ error: error.message || "Unknown error" }, null, 2)
+      const errorResponse = JSON.stringify({ error: error.message || "Unknown error" })
       setResponseData(errorResponse)
       setResponseDuration(null) // Reset duration on error
 
@@ -2218,8 +2296,7 @@ markdown
           const loadedData = await forceReloadKlineData()
 
           if (loadedData && loadedData.length > 0) {
-            const klineDataText = JSON.stringify(
-              {
+            const klineDataText = JSON.stringify({
                 tradingPair: tradingPairRef.current,
                 interval: klineIntervalRef.current,
                 dataCount: loadedData.length,
@@ -2231,18 +2308,15 @@ markdown
                   close: candle.close,
                   volume: candle.volume,
                 })),
-              },
-              null,
-              2,
-            )
+              })
 
             // Update state for UI display
-            setUserMessage(klineDataText)
+            setContext(klineDataText)
             console.log("[v0] Timer tick: Updated user message with fresh K-line data")
-            
-            // Execute the test with the new message directly (not relying on state update)
+
+            // Execute the test with the new context directly (not relying on state update)
             // handleTest will call scheduleNextTest again after response returns
-            handleTest(klineDataText)
+            handleTest(undefined, klineDataText)
           } else {
             // If no data loaded, use current message
             handleTest()
@@ -2260,7 +2334,7 @@ markdown
     }, timerInterval * 1000) // Convert seconds to milliseconds
   }
 
-  const startTimer = (initialMessage?: string) => {
+  const startTimer = (initialMessage?: string, initialContext?: string) => {
     // Clear any existing timer
     if (timerRef.current) {
       clearTimeout(timerRef.current)
@@ -2269,9 +2343,9 @@ markdown
     isTimerRunningRef.current = true
     setIsTimerRunning(true)
 
-    // Execute handleTest immediately for the first time with initial message if provided
+    // Execute handleTest immediately for the first time with initial message/context if provided
     // handleTest will call scheduleNextTest after response returns
-    handleTest(initialMessage)
+    handleTest(initialMessage, initialContext)
   }
 
   const stopTimer = () => {
@@ -2306,11 +2380,11 @@ markdown
       // If candle is selected, do nothing - just proceed with existing message
       console.log("[v0] Selected candle exists, proceeding without reload")
     } else {
-      // If no candle selected, clear message, reload chart, and write all K-line data
-      console.log("[v0] No selected candle, clearing message and reloading K-line data...")
+      // If no candle selected, clear context, reload chart, and write all K-line data
+      console.log("[v0] No selected candle, clearing context and reloading K-line data...")
 
-      // Clear user message
-      setUserMessage("")
+      // Clear context only (preserve user message)
+      setContext("")
 
       // Show toast notification that reload is starting
       toast({
@@ -2325,8 +2399,7 @@ markdown
         console.log("[v0] K-line data reload completed, data length:", loadedData?.length || 0)
 
         if (loadedData && loadedData.length > 0) {
-          const klineDataText = JSON.stringify(
-            {
+          const klineDataText = JSON.stringify({
               tradingPair,
               interval: klineInterval,
               dataCount: loadedData.length,
@@ -2338,25 +2411,22 @@ markdown
                 close: candle.close,
                 volume: candle.volume,
               })),
-            },
-            null,
-            2,
-          )
+            })
 
-          setUserMessage(klineDataText)
+          setContext(klineDataText)
           console.log("[v0] Overwrote user message with K-line data, length:", klineDataText.length)
 
           toast({
             title: "K线数据已添加",
-            description: `已将 ${loadedData.length} 条K线数据添加到消息中`,
+            description: `已将 ${loadedData.length} 条K线数据添加到上下文中`,
             className: "bg-green-50 border-green-200",
             duration: 2000,
           })
 
           if (timerEnabled) {
-            startTimer(klineDataText)
+            startTimer(undefined, klineDataText)
           } else {
-            handleTest(klineDataText)
+            handleTest(undefined, klineDataText)
           }
           return // Return early since we've already called handleTest
         } else {
@@ -2396,6 +2466,8 @@ markdown
     setProbeStatus("idle") // Reset probe status
     setSystemPrompt(DEFAULT_VALUES.systemPrompt) // Reset systemPrompt
     setUserMessage(DEFAULT_VALUES.userMessage) // Reset userMessage
+    setContext("") // Reset context
+    setIsContextExpanded(false) // Reset context expanded state
     setPromptFilePath(DEFAULT_VALUES.promptFilePath) // Reset promptFilePath
     setEnablePromptFile(DEFAULT_VALUES.enablePromptFile) // Reset enablePromptFile
     // Resetting system prompt external file settings
@@ -4274,7 +4346,7 @@ markdown
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>加密货币K线图</CardTitle>
-                <CardDescription>点击K线时间点将数据填入消息框，或选择时间点加载历史数据</CardDescription>
+                <CardDescription>点击K线时间点将数据填入上下文，或选择时间点加载历史数据</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -4340,6 +4412,58 @@ markdown
           {isParametersExpanded && (
             <CardContent className="space-y-4">
               <div className="space-y-4">
+                {/* Context input - readonly, for K-line data */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <Label htmlFor="context">上下文</Label>
+                      <p className="text-xs text-muted-foreground">K线数据等上下文信息（只读）</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {context && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setIsContextExpanded(!isContextExpanded)}
+                          className="h-7 px-2 text-xs"
+                        >
+                          {isContextExpanded ? (
+                            <>
+                              <ChevronUp className="mr-1 h-3.5 w-3.5" />
+                              收起
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="mr-1 h-3.5 w-3.5" />
+                              展开
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {context && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setContext("")}
+                          className="h-7 px-2 text-xs"
+                        >
+                          清除
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <Textarea
+                    id="context"
+                    value={context}
+                    readOnly
+                    placeholder="点击K线时间点将数据填入此处..."
+                    rows={4}
+                    className={`bg-muted/50 cursor-not-allowed resize-none ${isContextExpanded ? "" : "max-h-32 overflow-y-auto"}`}
+                  />
+                </div>
+
                 {!enablePromptFile && (
                   <>
                     <div className="flex items-center justify-between">

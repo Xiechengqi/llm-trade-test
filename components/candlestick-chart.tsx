@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   createChart,
   CandlestickSeries,
@@ -33,15 +33,7 @@ import {
   calculateMFI,
   calculateVPT,
 } from "@/lib/indicators"
-
-export interface KlineData {
-  time: number
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number
-}
+import type { KlineData } from "@/lib/types"
 
 interface CandlestickChartProps {
   data: KlineData[]
@@ -60,6 +52,7 @@ interface CandlestickChartProps {
   onForceReload?: () => void
   markedCandleTime: number | null
   onMarkedCandleTimeChange?: (time: number | null) => void
+  onIndicatorsChange?: (indicators: IndicatorConfig[]) => void
 }
 
 export function CandlestickChart({
@@ -79,6 +72,7 @@ export function CandlestickChart({
   onForceReload,
   markedCandleTime: externalMarkedCandleTime,
   onMarkedCandleTimeChange,
+  onIndicatorsChange,
 }: CandlestickChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -131,6 +125,9 @@ export function CandlestickChart({
 
   const markedCandleTime = externalMarkedCandleTime !== undefined ? externalMarkedCandleTime : internalMarkedCandleTime
   const setMarkedCandleTime = onMarkedCandleTimeChange || setInternalMarkedCandleTime
+  const [markerTime, setMarkerTime] = useState<number | null>(null)
+
+  const normalizeToSeconds = useCallback((timestamp: number) => Math.floor(timestamp / 1000), [])
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -240,7 +237,7 @@ export function CandlestickChart({
   useEffect(() => {
     if (candlestickSeriesRef.current && data.length > 0) {
       const chartData: CandlestickData[] = data.map((item) => ({
-        time: (item.time / 1000) as Time,
+        time: normalizeToSeconds(item.time) as Time,
         open: item.open,
         high: item.high,
         low: item.low,
@@ -253,18 +250,17 @@ export function CandlestickChart({
         chartRef.current.timeScale().fitContent()
       }
     }
-  }, [data])
+  }, [data, normalizeToSeconds])
 
   useEffect(() => {
     if (!markersPluginRef.current) return
 
-    if (markedCandleTime !== null) {
-      const markedCandle = data.find((item) => item.time === markedCandleTime)
-      if (markedCandle) {
-        console.log("[v0] Setting marker for time:", markedCandleTime)
+    if (markerTime !== null) {
+      const hasMatchingCandle = data.some((item) => normalizeToSeconds(item.time) === markerTime)
+      if (hasMatchingCandle) {
         const markers: SeriesMarker<Time>[] = [
           {
-            time: (markedCandleTime / 1000) as Time,
+            time: markerTime as Time,
             position: "aboveBar",
             color: "#000000",
             shape: "arrowDown",
@@ -272,15 +268,26 @@ export function CandlestickChart({
           },
         ]
         markersPluginRef.current.setMarkers(markers)
-      } else {
-        console.log("[v0] Clearing markers - candle not found")
-        markersPluginRef.current.setMarkers([])
+        return
       }
-    } else {
-      console.log("[v0] Clearing markers - markedCandleTime is null")
-      markersPluginRef.current.setMarkers([])
     }
-  }, [markedCandleTime, data])
+
+    markersPluginRef.current.setMarkers([])
+  }, [markerTime, data, normalizeToSeconds])
+
+  useEffect(() => {
+    if (markedCandleTime === null) {
+      setMarkerTime(null)
+      return
+    }
+
+    const markedCandle = data.find((item) => item.time === markedCandleTime)
+    if (markedCandle) {
+      setMarkerTime(normalizeToSeconds(markedCandle.time))
+    } else {
+      setMarkerTime(null)
+    }
+  }, [markedCandleTime, data, normalizeToSeconds])
 
   useEffect(() => {
     if (!chartRef.current || !onCandleClick) return
@@ -289,7 +296,7 @@ export function CandlestickChart({
       if (!param.time) return
 
       const clickedTime = param.time as number
-      const clickedIndex = data.findIndex((item) => item.time / 1000 === clickedTime)
+      const clickedIndex = data.findIndex((item) => normalizeToSeconds(item.time) === clickedTime)
 
       if (clickedIndex >= 0) {
         const clickedCandle = data[clickedIndex]
@@ -298,6 +305,7 @@ export function CandlestickChart({
         console.log("[v0] Candle clicked, time:", clickedCandle.time)
 
         setMarkedCandleTime(clickedCandle.time)
+        setMarkerTime(clickedTime)
 
         onCandleClick(dataBeforeClick, clickedCandle)
       }
@@ -310,7 +318,7 @@ export function CandlestickChart({
         chartRef.current.unsubscribeClick(handleClick)
       }
     }
-  }, [data, onCandleClick])
+  }, [data, onCandleClick, normalizeToSeconds, setMarkedCandleTime])
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -351,6 +359,10 @@ export function CandlestickChart({
       }
     }
   }, [activeIndicators])
+
+  useEffect(() => {
+    onIndicatorsChange?.(activeIndicators)
+  }, [activeIndicators, onIndicatorsChange])
 
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return

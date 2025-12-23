@@ -3,18 +3,41 @@ import type React from "react"
 
 import "./globals.css"
 
-import { Geist, Geist_Mono, Source_Serif_4 } from "next/font/google"
+import localFont from "next/font/local"
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt"
 
-// Initialize fonts
-const _geist = Geist({ subsets: ["latin"], weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"] })
-const _geistMono = Geist_Mono({
-  subsets: ["latin"],
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+// Initialize fonts from local files to avoid network fetches during build
+const geist = localFont({
+  src: [
+    {
+      path: "../public/fonts/GeistSans.ttf",
+      weight: "400",
+      style: "normal",
+    },
+  ],
+  variable: "--font-geist-sans",
 })
-const _sourceSerif_4 = Source_Serif_4({
-  subsets: ["latin"],
-  weight: ["200", "300", "400", "500", "600", "700", "800", "900"],
+
+const geistMono = localFont({
+  src: [
+    {
+      path: "../public/fonts/GeistMono.ttf",
+      weight: "400",
+      style: "normal",
+    },
+  ],
+  variable: "--font-geist-mono",
+})
+
+const sourceSerif = localFont({
+  src: [
+    {
+      path: "../public/fonts/SourceSerif4.ttf",
+      weight: "400",
+      style: "normal",
+    },
+  ],
+  variable: "--font-source-serif",
 })
 
 export const metadata: Metadata = {
@@ -35,7 +58,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`font-sans antialiased`}>
+      <body className={`${geist.variable} ${geistMono.variable} ${sourceSerif.variable} font-sans antialiased`}>
         {children}
         <PWAInstallPrompt />
         <script

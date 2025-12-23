@@ -3,7 +3,9 @@
 import type React from "react"
 
 import { TableHeader } from "@/components/ui/table"
-import { CandlestickChart, type KlineData } from "@/components/candlestick-chart"
+import { CandlestickChart } from "@/components/candlestick-chart"
+import type { KlineData } from "@/lib/types"
+import type { IndicatorConfig } from "@/components/indicators-dropdown"
 
 import { CardDescription } from "@/components/ui/card"
 import {
@@ -47,6 +49,22 @@ import { TableBody, TableCell, TableHead, TableRow, Table } from "@/components/u
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
+
+type IndicatorFilterKey = `indicator-${number}`
+type ContextFilter = "all" | "kline" | IndicatorFilterKey
+import {
+  calculateATR,
+  calculateBOLL,
+  calculateEMA,
+  calculateKDJ,
+  calculateMACD,
+  calculateMFI,
+  calculateMA,
+  calculateOBV,
+  calculateRSI,
+  calculateVWAP,
+  calculateVPT,
+} from "@/lib/indicators"
 
 import {
   initDB,
@@ -608,6 +626,8 @@ markdown
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_VALUES.systemPrompt) // Added systemPrompt state
   const [userMessage, setUserMessage] = useState(DEFAULT_VALUES.userMessage) // Added userMessage state
   const [context, setContext] = useState("") // Context for K-line data and other context information
+  const [contextFilter, setContextFilter] = useState<ContextFilter>("all")
+  const [contextIndicators, setContextIndicators] = useState<IndicatorConfig[]>([])
   const [promptFilePath, setPromptFilePath] = useState(DEFAULT_VALUES.promptFilePath)
   const [enablePromptFile, setEnablePromptFile] = useState(DEFAULT_VALUES.enablePromptFile) // Add enablePromptFile state
   const [isPromptFromLocalFile, setIsPromptFromLocalFile] = useState(false)
@@ -885,22 +905,301 @@ markdown
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+08:00`
   }, [])
 
+  type ContextPayload = {
+    tradingPair?: string
+    interval?: string
+    dataCount?: number
+    klineData?: Array<{
+      time: string
+      open: number
+      high: number
+      low: number
+      close: number
+      volume: number
+    }>
+    indicators?: Array<{
+      type: IndicatorConfig["type"]
+      params: IndicatorConfig["params"]
+      data: Array<Record<string, number | string>>
+    }>
+  }
+
+  const formatIndicatorLabel = useCallback((indicator: { type: IndicatorConfig["type"]; params: IndicatorConfig["params"] }) => {
+    switch (indicator.type) {
+      case "MA":
+        return `MA(${indicator.params.period})`
+      case "EMA":
+        return `EMA(${indicator.params.period})`
+      case "MACD":
+        return `MACD(${indicator.params.fastPeriod},${indicator.params.slowPeriod},${indicator.params.signalPeriod})`
+      case "BOLL":
+        return `BOLL(${indicator.params.period},${indicator.params.stdDev})`
+      case "RSI":
+        return `RSI(${indicator.params.period})`
+      case "KDJ":
+        return `KDJ(${indicator.params.period},${indicator.params.kPeriod},${indicator.params.dPeriod})`
+      case "ATR":
+        return `ATR(${indicator.params.period})`
+      case "MFI":
+        return `MFI(${indicator.params.period})`
+      case "VOL":
+        return "VOL"
+      case "VWAP":
+        return "VWAP"
+      case "OBV":
+        return "OBV"
+      case "VPT":
+        return "VPT"
+      default:
+        return indicator.type
+    }
+  }, [])
+
+  const buildContextJson = useCallback(
+    (klineSlice: KlineData[]): string => {
+      if (!klineSlice || klineSlice.length === 0) {
+        return ""
+      }
+
+      const formattedKlines = klineSlice.map((item) => ({
+        time: formatTimeToUTC8(item.time),
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+        volume: item.volume,
+      }))
+
+      const indicatorsPayload: Array<{
+        type: IndicatorConfig["type"]
+        params: IndicatorConfig["params"]
+        data: Array<Record<string, number | string>>
+      }> = []
+
+      contextIndicators.forEach((indicator) => {
+          const params: IndicatorConfig["params"] = indicator.params ?? {}
+          let data: Array<Record<string, number | string>> = []
+
+          switch (indicator.type) {
+            case "MA":
+              if (indicator.params.period) {
+                data = calculateMA(klineSlice, indicator.params.period).map((item) => ({
+                  time: formatTimeToUTC8(item.time),
+                  value: item.value,
+                }))
+              }
+              break
+            case "EMA":
+              if (indicator.params.period) {
+                data = calculateEMA(klineSlice, indicator.params.period).map((item) => ({
+                  time: formatTimeToUTC8(item.time),
+                  value: item.value,
+                }))
+              }
+              break
+            case "MACD":
+              if (
+                indicator.params.fastPeriod &&
+                indicator.params.slowPeriod &&
+                indicator.params.signalPeriod
+              ) {
+                data = calculateMACD(
+                  klineSlice,
+                  indicator.params.fastPeriod,
+                  indicator.params.slowPeriod,
+                  indicator.params.signalPeriod,
+                ).map((item) => ({
+                  time: formatTimeToUTC8(item.time),
+                  macd: item.macd,
+                  signal: item.signal,
+                  histogram: item.histogram,
+                }))
+              }
+              break
+            case "BOLL":
+              if (indicator.params.period && indicator.params.stdDev) {
+                data = calculateBOLL(klineSlice, indicator.params.period, indicator.params.stdDev).map(
+                  (item) => ({
+                    time: formatTimeToUTC8(item.time),
+                    upper: item.upper,
+                    middle: item.middle,
+                    lower: item.lower,
+                  }),
+                )
+              }
+              break
+            case "RSI":
+              if (indicator.params.period) {
+                data = calculateRSI(klineSlice, indicator.params.period).map((item) => ({
+                  time: formatTimeToUTC8(item.time),
+                  value: item.value,
+                }))
+              }
+              break
+            case "KDJ":
+              if (indicator.params.period) {
+                data = calculateKDJ(
+                  klineSlice,
+                  indicator.params.period,
+                  indicator.params.kPeriod || 3,
+                  indicator.params.dPeriod || 3,
+                ).map((item) => ({
+                  time: formatTimeToUTC8(item.time),
+                  k: item.k,
+                  d: item.d,
+                  j: item.j,
+                }))
+              }
+              break
+            case "ATR":
+              if (indicator.params.period) {
+                data = calculateATR(klineSlice, indicator.params.period).map((item) => ({
+                  time: formatTimeToUTC8(item.time),
+                  value: item.value,
+                }))
+              }
+              break
+            case "VOL":
+              data = klineSlice.map((item) => ({
+                time: formatTimeToUTC8(item.time),
+                value: item.volume,
+              }))
+              break
+            case "VWAP":
+              data = calculateVWAP(klineSlice).map((item) => ({
+                time: formatTimeToUTC8(item.time),
+                value: item.value,
+              }))
+              break
+            case "OBV":
+              data = calculateOBV(klineSlice).map((item) => ({
+                time: formatTimeToUTC8(item.time),
+                value: item.value,
+              }))
+              break
+            case "MFI":
+              if (indicator.params.period) {
+                data = calculateMFI(klineSlice, indicator.params.period).map((item) => ({
+                  time: formatTimeToUTC8(item.time),
+                  value: item.value,
+                }))
+              }
+              break
+            case "VPT":
+              data = calculateVPT(klineSlice).map((item) => ({
+                time: formatTimeToUTC8(item.time),
+                value: item.value,
+              }))
+              break
+          }
+
+          if (data.length > 0) {
+            indicatorsPayload.push({
+              type: indicator.type,
+              params,
+              data,
+            })
+          }
+        })
+
+      const payload = {
+        tradingPair,
+        interval: klineInterval,
+        dataCount: klineSlice.length,
+        klineData: formattedKlines,
+        indicators: indicatorsPayload,
+      }
+
+      return JSON.stringify(payload)
+    },
+    [contextIndicators, formatTimeToUTC8, tradingPair, klineInterval],
+  )
+
+  const parsedContext = useMemo<ContextPayload | null>(() => {
+    if (!context) return null
+    try {
+      return JSON.parse(context)
+    } catch {
+      return null
+    }
+  }, [context])
+
+  useEffect(() => {
+    if (!context) {
+      setContextFilter("all")
+    }
+  }, [context])
+
+  useEffect(() => {
+    if (contextFilter.startsWith("indicator-")) {
+      const indicatorIndex = Number.parseInt(contextFilter.replace("indicator-", ""), 10)
+      if (!parsedContext?.indicators || !parsedContext.indicators[indicatorIndex]) {
+        setContextFilter("all")
+      }
+    }
+  }, [contextFilter, parsedContext])
+
+  const hasKlineData = (parsedContext?.klineData?.length ?? 0) > 0
+
+  const baseContextFilterOptions: Array<{
+    key: ContextFilter
+    label: string
+    disabled: boolean
+  }> = [
+    { key: "all", label: "全部", disabled: !context },
+    { key: "kline", label: "K线", disabled: !hasKlineData },
+  ]
+
+  const indicatorFilterOptions = useMemo(
+    () =>
+      (parsedContext?.indicators ?? []).map((indicator, index) => ({
+        key: `indicator-${index}` as IndicatorFilterKey,
+        label: formatIndicatorLabel({
+          type: indicator.type,
+          params: indicator.params ?? {},
+        }),
+        disabled: !indicator.data || indicator.data.length === 0,
+      })),
+    [parsedContext, formatIndicatorLabel],
+  )
+
+  const filteredContext = useMemo(() => {
+    if (!context) {
+      return ""
+    }
+
+    if (contextFilter === "all" || !parsedContext) {
+      return context
+    }
+
+    if (contextFilter === "kline") {
+      const klinePayload = {
+        tradingPair: parsedContext.tradingPair,
+        interval: parsedContext.interval,
+        dataCount: parsedContext.dataCount,
+        klineData: parsedContext.klineData ?? [],
+      }
+      return JSON.stringify(klinePayload)
+    }
+
+    if (contextFilter.startsWith("indicator-")) {
+      const indicatorIndex = Number.parseInt(contextFilter.replace("indicator-", ""), 10)
+      const indicator = parsedContext.indicators?.[indicatorIndex]
+      const indicatorPayload = {
+        tradingPair: parsedContext.tradingPair,
+        interval: parsedContext.interval,
+        indicators: indicator ? [indicator] : [],
+      }
+      return JSON.stringify(indicatorPayload)
+    }
+
+    return context
+  }, [context, contextFilter, parsedContext])
+
   // Handle candle click - put K-line data into user message
   const handleCandleClick = useCallback(
     (dataBeforeClick: KlineData[], clickedCandle: KlineData) => {
-      const klineJson = JSON.stringify({
-          tradingPair,
-          interval: klineInterval,
-          dataCount: dataBeforeClick.length,
-          klineData: dataBeforeClick.map((item) => ({
-            time: formatTimeToUTC8(item.time),
-            open: item.open,
-            high: item.high,
-            low: item.low,
-            close: item.close,
-            volume: item.volume,
-          })),
-        })
+      const klineJson = buildContextJson(dataBeforeClick)
 
       setContext(klineJson)
 
@@ -912,7 +1211,7 @@ markdown
         description: `已将 ${dataBeforeClick.length} 条K线数据填入上下文`,
       })
     },
-    [tradingPair, klineInterval, toast, formatTimeToUTC8],
+    [buildContextJson, toast],
   )
 
   //获取当前选中的模型信息（提前定义，供 fullApiPath 使用）
@@ -2296,23 +2595,13 @@ markdown
           const loadedData = await forceReloadKlineData()
 
           if (loadedData && loadedData.length > 0) {
-            const klineDataText = JSON.stringify({
-                tradingPair: tradingPairRef.current,
-                interval: klineIntervalRef.current,
-                dataCount: loadedData.length,
-                klineData: loadedData.map((candle) => ({
-                  time: formatTimeToUTC8(candle.time),
-                  open: candle.open,
-                  high: candle.high,
-                  low: candle.low,
-                  close: candle.close,
-                  volume: candle.volume,
-                })),
-              })
+            const klineDataText = buildContextJson(loadedData)
 
             // Update state for UI display
-            setContext(klineDataText)
-            console.log("[v0] Timer tick: Updated user message with fresh K-line data")
+            if (klineDataText) {
+              setContext(klineDataText)
+              console.log("[v0] Timer tick: Updated user message with fresh K-line data")
+            }
 
             // Execute the test with the new context directly (not relying on state update)
             // handleTest will call scheduleNextTest again after response returns
@@ -2399,19 +2688,7 @@ markdown
         console.log("[v0] K-line data reload completed, data length:", loadedData?.length || 0)
 
         if (loadedData && loadedData.length > 0) {
-          const klineDataText = JSON.stringify({
-              tradingPair,
-              interval: klineInterval,
-              dataCount: loadedData.length,
-              klineData: loadedData.map((candle) => ({
-                time: formatTimeToUTC8(candle.time),
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
-                volume: candle.volume,
-              })),
-            })
+          const klineDataText = buildContextJson(loadedData)
 
           setContext(klineDataText)
           console.log("[v0] Overwrote user message with K-line data, length:", klineDataText.length)
@@ -4368,6 +4645,7 @@ markdown
               onForceReload={forceReloadKlineData}
               markedCandleTime={markedCandleTime}
               onMarkedCandleTimeChange={setMarkedCandleTime}
+              onIndicatorsChange={setContextIndicators}
             />
           </CardContent>
         </Card>
@@ -4418,6 +4696,23 @@ markdown
                     <div>
                       <Label htmlFor="context">上下文</Label>
                       <p className="text-xs text-muted-foreground">K线数据等上下文信息（只读）</p>
+                      {context && (
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          {[...baseContextFilterOptions, ...indicatorFilterOptions].map((option) => (
+                            <Button
+                              key={option.key}
+                              type="button"
+                              variant={contextFilter === option.key ? "default" : "outline"}
+                              size="sm"
+                              disabled={option.disabled}
+                              onClick={() => setContextFilter(option.key)}
+                              className="h-7 px-2 text-xs"
+                            >
+                              {option.label}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {context && (
@@ -4456,7 +4751,7 @@ markdown
                   </div>
                   <Textarea
                     id="context"
-                    value={context}
+                    value={filteredContext}
                     readOnly
                     placeholder="点击K线时间点将数据填入此处..."
                     rows={4}

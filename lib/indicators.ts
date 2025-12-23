@@ -1,4 +1,4 @@
-import type { KlineData } from "@/components/candlestick-chart"
+import type { KlineData } from "@/lib/types"
 
 export interface MAResult {
   time: number

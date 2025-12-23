@@ -4687,7 +4687,7 @@ markdown
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>加密货币K线图</CardTitle>
+                <CardTitle>K线图</CardTitle>
                 <CardDescription>点击K线时间点将数据填入上下文，或选择时间点加载历史数据</CardDescription>
               </div>
             </div>

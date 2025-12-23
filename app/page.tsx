@@ -755,35 +755,306 @@ markdown
     }
   }, [klineEndTime])
 
-  // Popular trading pairs for quick selection
+  // Popular trading pairs for quick selection - organized by category
   const popularPairs = [
-    "BTCUSDT",
-    "ETHUSDT",
-    "BNBUSDT",
-    "SOLUSDT",
-    "XRPUSDT",
-    "ADAUSDT",
-    "DOGEUSDT",
-    "MATICUSDT",
-    "DOTUSDT",
-    "AVAXUSDT",
+    // ========== US Stocks ==========
+    // Magnificent 7
+    "STOCK:AAPL", // Apple
+    "STOCK:MSFT", // Microsoft
+    "STOCK:GOOGL", // Alphabet (Google)
+    "STOCK:AMZN", // Amazon
+    "STOCK:NVDA", // NVIDIA
+    "STOCK:META", // Meta (Facebook)
+    "STOCK:TSLA", // Tesla
+    // Top Tech Stocks
+    "STOCK:AMD", // AMD
+    "STOCK:INTC", // Intel
+    "STOCK:CRM", // Salesforce
+    "STOCK:ORCL", // Oracle
+    "STOCK:ADBE", // Adobe
+    "STOCK:NFLX", // Netflix
+    "STOCK:AVGO", // Broadcom
+    "STOCK:QCOM", // Qualcomm
+    "STOCK:CSCO", // Cisco
+    "STOCK:IBM", // IBM
+    "STOCK:TXN", // Texas Instruments
+    "STOCK:MU", // Micron
+    "STOCK:AMAT", // Applied Materials
+    "STOCK:LRCX", // Lam Research
+    "STOCK:KLAC", // KLA Corporation
+    "STOCK:ASML", // ASML
+    "STOCK:TSM", // TSMC
+    "STOCK:SNOW", // Snowflake
+    "STOCK:PLTR", // Palantir
+    "STOCK:NET", // Cloudflare
+    "STOCK:DDOG", // Datadog
+    "STOCK:ZS", // Zscaler
+    "STOCK:CRWD", // CrowdStrike
+    "STOCK:PANW", // Palo Alto Networks
+    // Financials
+    "STOCK:JPM", // JPMorgan Chase
+    "STOCK:BAC", // Bank of America
+    "STOCK:WFC", // Wells Fargo
+    "STOCK:GS", // Goldman Sachs
+    "STOCK:MS", // Morgan Stanley
+    "STOCK:C", // Citigroup
+    "STOCK:BLK", // BlackRock
+    "STOCK:SCHW", // Charles Schwab
+    "STOCK:V", // Visa
+    "STOCK:MA", // Mastercard
+    "STOCK:AXP", // American Express
+    "STOCK:PYPL", // PayPal
+    "STOCK:SQ", // Block (Square)
+    "STOCK:COIN", // Coinbase
+    // Healthcare & Pharma
+    "STOCK:JNJ", // Johnson & Johnson
+    "STOCK:UNH", // UnitedHealth
+    "STOCK:PFE", // Pfizer
+    "STOCK:MRK", // Merck
+    "STOCK:ABBV", // AbbVie
+    "STOCK:LLY", // Eli Lilly
+    "STOCK:BMY", // Bristol-Myers Squibb
+    "STOCK:AMGN", // Amgen
+    "STOCK:GILD", // Gilead Sciences
+    "STOCK:MRNA", // Moderna
+    "STOCK:REGN", // Regeneron
+    "STOCK:VRTX", // Vertex Pharmaceuticals
+    "STOCK:ISRG", // Intuitive Surgical
+    // Consumer & Retail
+    "STOCK:WMT", // Walmart
+    "STOCK:COST", // Costco
+    "STOCK:HD", // Home Depot
+    "STOCK:TGT", // Target
+    "STOCK:LOW", // Lowe's
+    "STOCK:NKE", // Nike
+    "STOCK:SBUX", // Starbucks
+    "STOCK:MCD", // McDonald's
+    "STOCK:KO", // Coca-Cola
+    "STOCK:PEP", // PepsiCo
+    "STOCK:PG", // Procter & Gamble
+    // Energy
+    "STOCK:XOM", // ExxonMobil
+    "STOCK:CVX", // Chevron
+    "STOCK:COP", // ConocoPhillips
+    "STOCK:OXY", // Occidental Petroleum
+    "STOCK:SLB", // Schlumberger
+    // Industrials & Defense
+    "STOCK:BA", // Boeing
+    "STOCK:LMT", // Lockheed Martin
+    "STOCK:RTX", // Raytheon
+    "STOCK:GE", // General Electric
+    "STOCK:CAT", // Caterpillar
+    "STOCK:HON", // Honeywell
+    "STOCK:UPS", // UPS
+    "STOCK:FDX", // FedEx
+    // EV & Automotive
+    "STOCK:RIVN", // Rivian
+    "STOCK:LCID", // Lucid Motors
+    "STOCK:F", // Ford
+    "STOCK:GM", // General Motors
+    "STOCK:TM", // Toyota
+    // Entertainment & Media
+    "STOCK:DIS", // Disney
+    "STOCK:WBD", // Warner Bros Discovery
+    "STOCK:PARA", // Paramount
+    "STOCK:SPOT", // Spotify
+    "STOCK:RBLX", // Roblox
+    "STOCK:EA", // Electronic Arts
+    "STOCK:TTWO", // Take-Two Interactive
+    // AI & Robotics
+    "STOCK:ARM", // ARM Holdings
+    "STOCK:AI", // C3.ai
+    "STOCK:PATH", // UiPath
+    "STOCK:UPST", // Upstart
+    "STOCK:SMCI", // Super Micro Computer
+    // Chinese ADRs
+    "STOCK:BABA", // Alibaba
+    "STOCK:JD", // JD.com
+    "STOCK:PDD", // PDD Holdings (Pinduoduo)
+    "STOCK:BIDU", // Baidu
+    "STOCK:NIO", // NIO
+    "STOCK:XPEV", // XPeng
+    "STOCK:LI", // Li Auto
+    "STOCK:BILI", // Bilibili
+    "STOCK:TME", // Tencent Music
+    // ETFs
+    "STOCK:SPY", // S&P 500 ETF
+    "STOCK:QQQ", // Nasdaq 100 ETF
+    "STOCK:IWM", // Russell 2000 ETF
+    "STOCK:DIA", // Dow Jones ETF
+    "STOCK:VTI", // Total Stock Market ETF
+    "STOCK:ARKK", // ARK Innovation ETF
+    "STOCK:XLF", // Financial Select Sector ETF
+    "STOCK:XLE", // Energy Select Sector ETF
+    "STOCK:XLK", // Technology Select Sector ETF
+    "STOCK:SOXX", // Semiconductor ETF
+    "STOCK:GLD", // Gold ETF
+    "STOCK:SLV", // Silver ETF
+    "STOCK:USO", // Oil ETF
+    "STOCK:TLT", // 20+ Year Treasury Bond ETF
+    "STOCK:VIX", // Volatility Index
+    // Top Cryptocurrencies by Market Cap
+    "BTCUSDT", // Bitcoin
+    "ETHUSDT", // Ethereum
+    "BNBUSDT", // Binance Coin
+    "XRPUSDT", // Ripple
+    "SOLUSDT", // Solana
+    "ADAUSDT", // Cardano
+    "DOGEUSDT", // Dogecoin
+    "TRXUSDT", // TRON
+    "TONUSDT", // Toncoin
+    "LINKUSDT", // Chainlink
+    "AVAXUSDT", // Avalanche
+    "XLMUSDT", // Stellar
+    "SUIUSDT", // Sui
+    "DOTUSDT", // Polkadot
+    "BCHUSDT", // Bitcoin Cash
+    "SHIBUSDT", // Shiba Inu
+    "LTCUSDT", // Litecoin
+    "UNIUSDT", // Uniswap
+    "ATOMUSDT", // Cosmos
+    "NEARUSDT", // NEAR Protocol
+    "ICPUSDT", // Internet Computer
+    "APTUSDT", // Aptos
+    "ETCUSDT", // Ethereum Classic
+    "STXUSDT", // Stacks
+    "RENDERUSDT", // Render
+    "IMXUSDT", // Immutable X
+    "FILUSDT", // Filecoin
+    "HBARUSDT", // Hedera
+    "INJUSDT", // Injective
+    "OPUSDT", // Optimism
+    "ARBUSDT", // Arbitrum
+    "VETUSDT", // VeChain
+    "AAVEUSDT", // Aave
+    "MKRUSDT", // Maker
+    "GRTUSDT", // The Graph
+    "RUNEUSDT", // THORChain
+    "ALGOUSDT", // Algorand
+    "FTMUSDT", // Fantom
+    "SANDUSDT", // The Sandbox
+    "MANAUSDT", // Decentraland
+    "AXSUSDT", // Axie Infinity
+    "THETAUSDT", // Theta Network
+    "EGLDUSDT", // MultiversX
+    "FLOWUSDT", // Flow
+    "NEOUSDT", // NEO
+    "XTZUSDT", // Tezos
+    "EOSUSDT", // EOS
+    "SNXUSDT", // Synthetix
+    "CRVUSDT", // Curve DAO
+    "COMPUSDT", // Compound
+    "1INCHUSDT", // 1inch
+    "APEUSDT", // ApeCoin
+    "LRCUSDT", // Loopring
+    "ENJUSDT", // Enjin Coin
+    "CHZUSDT", // Chiliz
+    "BATUSDT", // Basic Attention Token
+    "ZILUSDT", // Zilliqa
+    "ZRXUSDT", // 0x
+    "KAVAUSDT", // Kava
+    "KSMUSDT", // Kusama
+    "DASHUSDT", // Dash
+    "ZECUSDT", // Zcash
+    "WAVESUSDT", // Waves
+    "QNTUSDT", // Quant
+    "LDOUSDT", // Lido DAO
+    "RPLETH", // Rocket Pool
+    "SSVUSDT", // SSV Network
+    "PENDLEUSDT", // Pendle
+    "GMXUSDT", // GMX
+    "DYDXUSDT", // dYdX
+    "MASKUSDT", // Mask Network
+    "IOTAUSDT", // IOTA
+    "ONTUSDT", // Ontology
+    "ICXUSDT", // ICON
+    "SKLUSDT", // SKALE
+    "ANKRUSDT", // Ankr
+    "STORJUSDT", // Storj
+    "CELRUSDT", // Celer Network
+    "CKBUSDT", // Nervos Network
+    "HOTUSDT", // Holo
+    "SCUSDT", // Siacoin
+    "RVNUSDT", // Ravencoin
+    // Meme Coins
+    "PEPEUSDT", // Pepe
+    "WIFUSDT", // dogwifhat
+    "FLOKIUSDT", // Floki
+    "BONKUSDT", // Bonk
+    "BOMEUSDT", // BOOK OF MEME
+    // Layer 2 & Scaling
+    "MATICUSDT", // Polygon
+    "ARBUSDT", // Arbitrum
+    "OPUSDT", // Optimism
+    "STRKUSDT", // Starknet
+    "ZKUSDT", // zkSync
+    "MANTAUSDT", // Manta Network
+    "BLURUSDT", // Blur
+    "TIAUSDT", // Celestia
+    "JUPUSDT", // Jupiter
+    "WUSDT", // Wormhole
+    "ENAUSDT", // Ethena
+    "ALTUSDT", // AltLayer
+    "PIXELUSDT", // Pixels
+    "PORTALUSDT", // Portal
+    "AIUSDT", // Sleepless AI
+    "XAIUSDT", // Xai
+    "ACEUSDT", // Fusionist
+    "NFPUSDT", // NFPrompt
+    // BTC Pairs
+    "ETHBTC", // ETH/BTC
+    "BNBBTC", // BNB/BTC
+    "XRPBTC", // XRP/BTC
+    "SOLBTC", // SOL/BTC
+    "ADABTC", // ADA/BTC
+    "DOTBTC", // DOT/BTC
+    "LINKBTC", // LINK/BTC
+    "LTCBTC", // LTC/BTC
+    "AVAXBTC", // AVAX/BTC
+    "ATOMBTC", // ATOM/BTC
+    // ETH Pairs
+    "BNBETH", // BNB/ETH
+    "LINKETH", // LINK/ETH
+    "UNISWAPETH", // UNI/ETH
+    "AAVEETH", // AAVE/ETH
+    "MKRAETH", // MKR/ETH
+    // Stablecoins Pairs
+    "BTCUSDC", // BTC/USDC
+    "ETHUSDC", // ETH/USDC
+    "BTCTUSD", // BTC/TUSD
+    "BTCFDUSD", // BTC/FDUSD
+    "ETHFDUSD", // ETH/FDUSD
+    // FIAT Pairs
+    "BTCEUR", // BTC/EUR
+    "ETHEUR", // ETH/EUR
+    "BTCGBP", // BTC/GBP
+    "ETHGBP", // ETH/GBP
+    "BTCBRL", // BTC/BRL
+    "BTCTRY", // BTC/TRY
   ]
 
   // K-line intervals
   const intervals = [
     { value: "1m", label: "1分钟" },
+    { value: "3m", label: "3分钟" }, // Added 3m interval
     { value: "5m", label: "5分钟" },
     { value: "15m", label: "15分钟" },
     { value: "30m", label: "30分钟" },
     { value: "1h", label: "1小时" },
+    { value: "2h", label: "2小时" }, // Added 2h interval
     { value: "4h", label: "4小时" },
+    { value: "6h", label: "6小时" }, // Added 6h interval
+    { value: "8h", label: "8小时" }, // Added 8h interval
+    { value: "12h", label: "12小时" }, // Added 12h interval
     { value: "1d", label: "1天" },
+    { value: "3d", label: "3天" }, // Added 3d interval
     { value: "1w", label: "1周" },
+    { value: "1M", label: "1月" }, // Added 1M interval
   ]
 
   const { toast } = useToast()
 
-  // Use a unified base URL for API calls
+  // Use a unified endpoint for API calls
   const unifiedEndpoint = baseURL.endsWith("/") ? baseURL.slice(0, -1) : baseURL // Remove trailing slash
 
   const fetchKlineData = useCallback(
@@ -791,6 +1062,146 @@ markdown
       setIsLoadingKline(true)
       console.log("[v0] Fetching K-line data:", { pair, interval, limit, endTime })
       try {
+        const isStock = pair.startsWith("STOCK:")
+
+        if (isStock) {
+          // Extract the actual stock symbol
+          const stockSymbol = pair.replace("STOCK:", "")
+
+          // Convert crypto interval to Yahoo Finance interval and period
+          // Yahoo Finance intervals: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
+          let yahooInterval = "1d"
+          let range = "1y"
+
+          switch (interval) {
+            case "1m":
+              yahooInterval = "1m"
+              range = "1d"
+              break
+            case "3m":
+              yahooInterval = "5m"
+              range = "5d"
+              break
+            case "5m":
+              yahooInterval = "5m"
+              range = "5d"
+              break
+            case "15m":
+              yahooInterval = "15m"
+              range = "5d"
+              break
+            case "30m":
+              yahooInterval = "30m"
+              range = "1mo"
+              break
+            case "1h":
+              yahooInterval = "60m"
+              range = "1mo"
+              break
+            case "2h":
+              yahooInterval = "60m"
+              range = "2mo"
+              break
+            case "4h":
+              yahooInterval = "60m"
+              range = "3mo"
+              break
+            case "6h":
+              yahooInterval = "60m"
+              range = "6mo"
+              break
+            case "8h":
+              yahooInterval = "60m"
+              range = "6mo"
+              break
+            case "12h":
+              yahooInterval = "60m"
+              range = "1y"
+              break
+            case "1d":
+              yahooInterval = "1d"
+              range = "2y"
+              break
+            case "3d":
+              yahooInterval = "1d"
+              range = "5y"
+              break
+            case "1w":
+              yahooInterval = "1wk"
+              range = "10y"
+              break
+            case "1M":
+              yahooInterval = "1mo"
+              range = "max"
+              break
+            default:
+              yahooInterval = "1d"
+              range = "1y"
+          }
+
+          // CHANGE: Use local API route instead of direct Yahoo Finance call to avoid CORS
+          const yahooUrl = `/api/stock-kline?symbol=${stockSymbol}&interval=${yahooInterval}&range=${range}`
+
+          const response = await fetch(yahooUrl)
+
+          if (!response.ok) {
+            throw new Error(`Failed to fetch stock data for ${stockSymbol}`)
+          }
+
+          const yahooData = await response.json()
+          const result = yahooData.chart?.result?.[0]
+
+          if (!result || !result.timestamp) {
+            throw new Error(`No data available for ${stockSymbol}`)
+          }
+
+          const timestamps = result.timestamp
+          const quote = result.indicators?.quote?.[0]
+
+          if (!quote) {
+            throw new Error(`No quote data for ${stockSymbol}`)
+          }
+
+          // Format data to match KlineData structure
+          let formattedData: KlineData[] = timestamps
+            .map((timestamp: number, index: number) => {
+              const open = quote.open?.[index]
+              const high = quote.high?.[index]
+              const low = quote.low?.[index]
+              const close = quote.close?.[index]
+              const volume = quote.volume?.[index]
+
+              // Skip entries with null values
+              if (open == null || high == null || low == null || close == null) {
+                return null
+              }
+
+              return {
+                time: timestamp * 1000, // Convert to milliseconds
+                open: Number(open),
+                high: Number(high),
+                low: Number(low),
+                close: Number(close),
+                volume: Number(volume || 0),
+              }
+            })
+            .filter((item: KlineData | null): item is KlineData => item !== null)
+
+          // Apply limit
+          if (formattedData.length > limit) {
+            formattedData = formattedData.slice(-limit)
+          }
+
+          // Apply endTime filter if specified
+          if (endTime) {
+            formattedData = formattedData.filter((item) => item.time <= endTime)
+          }
+
+          setKlineData(formattedData)
+          return formattedData
+        }
+
+        // Original Binance API logic for crypto
         const endTimeParam = endTime ? `&endTime=${endTime}` : ""
         const response = await fetch(
           `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=${interval}&limit=${limit}${endTimeParam}`,
@@ -926,36 +1337,39 @@ markdown
     }>
   }
 
-  const formatIndicatorLabel = useCallback((indicator: { type: IndicatorConfig["type"]; params: IndicatorConfig["params"] }) => {
-    switch (indicator.type) {
-      case "MA":
-        return `MA(${indicator.params.period})`
-      case "EMA":
-        return `EMA(${indicator.params.period})`
-      case "MACD":
-        return `MACD(${indicator.params.fastPeriod},${indicator.params.slowPeriod},${indicator.params.signalPeriod})`
-      case "BOLL":
-        return `BOLL(${indicator.params.period},${indicator.params.stdDev})`
-      case "RSI":
-        return `RSI(${indicator.params.period})`
-      case "KDJ":
-        return `KDJ(${indicator.params.period},${indicator.params.kPeriod},${indicator.params.dPeriod})`
-      case "ATR":
-        return `ATR(${indicator.params.period})`
-      case "MFI":
-        return `MFI(${indicator.params.period})`
-      case "VOL":
-        return "VOL"
-      case "VWAP":
-        return "VWAP"
-      case "OBV":
-        return "OBV"
-      case "VPT":
-        return "VPT"
-      default:
-        return indicator.type
-    }
-  }, [])
+  const formatIndicatorLabel = useCallback(
+    (indicator: { type: IndicatorConfig["type"]; params: IndicatorConfig["params"] }) => {
+      switch (indicator.type) {
+        case "MA":
+          return `MA(${indicator.params.period})`
+        case "EMA":
+          return `EMA(${indicator.params.period})`
+        case "MACD":
+          return `MACD(${indicator.params.fastPeriod},${indicator.params.slowPeriod},${indicator.params.signalPeriod})`
+        case "BOLL":
+          return `BOLL(${indicator.params.period},${indicator.params.stdDev})`
+        case "RSI":
+          return `RSI(${indicator.params.period})`
+        case "KDJ":
+          return `KDJ(${indicator.params.period},${indicator.params.kPeriod},${indicator.params.dPeriod})`
+        case "ATR":
+          return `ATR(${indicator.params.period})`
+        case "MFI":
+          return `MFI(${indicator.params.period})`
+        case "VOL":
+          return "VOL"
+        case "VWAP":
+          return "VWAP"
+        case "OBV":
+          return "OBV"
+        case "VPT":
+          return "VPT"
+        default:
+          return indicator.type
+      }
+    },
+    [],
+  )
 
   const buildContextJson = useCallback(
     (klineSlice: KlineData[]): string => {
@@ -979,130 +1393,124 @@ markdown
       }> = []
 
       contextIndicators.forEach((indicator) => {
-          const params: IndicatorConfig["params"] = indicator.params ?? {}
-          let data: Array<Record<string, number | string>> = []
+        const params: IndicatorConfig["params"] = indicator.params ?? {}
+        let data: Array<Record<string, number | string>> = []
 
-          switch (indicator.type) {
-            case "MA":
-              if (indicator.params.period) {
-                data = calculateMA(klineSlice, indicator.params.period).map((item) => ({
-                  time: formatTimeToUTC8(item.time),
-                  value: item.value,
-                }))
-              }
-              break
-            case "EMA":
-              if (indicator.params.period) {
-                data = calculateEMA(klineSlice, indicator.params.period).map((item) => ({
-                  time: formatTimeToUTC8(item.time),
-                  value: item.value,
-                }))
-              }
-              break
-            case "MACD":
-              if (
-                indicator.params.fastPeriod &&
-                indicator.params.slowPeriod &&
-                indicator.params.signalPeriod
-              ) {
-                data = calculateMACD(
-                  klineSlice,
-                  indicator.params.fastPeriod,
-                  indicator.params.slowPeriod,
-                  indicator.params.signalPeriod,
-                ).map((item) => ({
-                  time: formatTimeToUTC8(item.time),
-                  macd: item.macd,
-                  signal: item.signal,
-                  histogram: item.histogram,
-                }))
-              }
-              break
-            case "BOLL":
-              if (indicator.params.period && indicator.params.stdDev) {
-                data = calculateBOLL(klineSlice, indicator.params.period, indicator.params.stdDev).map(
-                  (item) => ({
-                    time: formatTimeToUTC8(item.time),
-                    upper: item.upper,
-                    middle: item.middle,
-                    lower: item.lower,
-                  }),
-                )
-              }
-              break
-            case "RSI":
-              if (indicator.params.period) {
-                data = calculateRSI(klineSlice, indicator.params.period).map((item) => ({
-                  time: formatTimeToUTC8(item.time),
-                  value: item.value,
-                }))
-              }
-              break
-            case "KDJ":
-              if (indicator.params.period) {
-                data = calculateKDJ(
-                  klineSlice,
-                  indicator.params.period,
-                  indicator.params.kPeriod || 3,
-                  indicator.params.dPeriod || 3,
-                ).map((item) => ({
-                  time: formatTimeToUTC8(item.time),
-                  k: item.k,
-                  d: item.d,
-                  j: item.j,
-                }))
-              }
-              break
-            case "ATR":
-              if (indicator.params.period) {
-                data = calculateATR(klineSlice, indicator.params.period).map((item) => ({
-                  time: formatTimeToUTC8(item.time),
-                  value: item.value,
-                }))
-              }
-              break
-            case "VOL":
-              data = klineSlice.map((item) => ({
-                time: formatTimeToUTC8(item.time),
-                value: item.volume,
-              }))
-              break
-            case "VWAP":
-              data = calculateVWAP(klineSlice).map((item) => ({
+        switch (indicator.type) {
+          case "MA":
+            if (indicator.params.period) {
+              data = calculateMA(klineSlice, indicator.params.period).map((item) => ({
                 time: formatTimeToUTC8(item.time),
                 value: item.value,
               }))
-              break
-            case "OBV":
-              data = calculateOBV(klineSlice).map((item) => ({
+            }
+            break
+          case "EMA":
+            if (indicator.params.period) {
+              data = calculateEMA(klineSlice, indicator.params.period).map((item) => ({
                 time: formatTimeToUTC8(item.time),
                 value: item.value,
               }))
-              break
-            case "MFI":
-              if (indicator.params.period) {
-                data = calculateMFI(klineSlice, indicator.params.period).map((item) => ({
-                  time: formatTimeToUTC8(item.time),
-                  value: item.value,
-                }))
-              }
-              break
-            case "VPT":
-              data = calculateVPT(klineSlice).map((item) => ({
+            }
+            break
+          case "MACD":
+            if (indicator.params.fastPeriod && indicator.params.slowPeriod && indicator.params.signalPeriod) {
+              data = calculateMACD(
+                klineSlice,
+                indicator.params.fastPeriod,
+                indicator.params.slowPeriod,
+                indicator.params.signalPeriod,
+              ).map((item) => ({
+                time: formatTimeToUTC8(item.time),
+                macd: item.macd,
+                signal: item.signal,
+                histogram: item.histogram,
+              }))
+            }
+            break
+          case "BOLL":
+            if (indicator.params.period && indicator.params.stdDev) {
+              data = calculateBOLL(klineSlice, indicator.params.period, indicator.params.stdDev).map((item) => ({
+                time: formatTimeToUTC8(item.time),
+                upper: item.upper,
+                middle: item.middle,
+                lower: item.lower,
+              }))
+            }
+            break
+          case "RSI":
+            if (indicator.params.period) {
+              data = calculateRSI(klineSlice, indicator.params.period).map((item) => ({
                 time: formatTimeToUTC8(item.time),
                 value: item.value,
               }))
-              break
-          }
+            }
+            break
+          case "KDJ":
+            if (indicator.params.period) {
+              data = calculateKDJ(
+                klineSlice,
+                indicator.params.period,
+                indicator.params.kPeriod || 3,
+                indicator.params.dPeriod || 3,
+              ).map((item) => ({
+                time: formatTimeToUTC8(item.time),
+                k: item.k,
+                d: item.d,
+                j: item.j,
+              }))
+            }
+            break
+          case "ATR":
+            if (indicator.params.period) {
+              data = calculateATR(klineSlice, indicator.params.period).map((item) => ({
+                time: formatTimeToUTC8(item.time),
+                value: item.value,
+              }))
+            }
+            break
+          case "VOL":
+            data = klineSlice.map((item) => ({
+              time: formatTimeToUTC8(item.time),
+              value: item.volume,
+            }))
+            break
+          case "VWAP":
+            data = calculateVWAP(klineSlice).map((item) => ({
+              time: formatTimeToUTC8(item.time),
+              value: item.value,
+            }))
+            break
+          case "OBV":
+            data = calculateOBV(klineSlice).map((item) => ({
+              time: formatTimeToUTC8(item.time),
+              value: item.value,
+            }))
+            break
+          case "MFI":
+            if (indicator.params.period) {
+              data = calculateMFI(klineSlice, indicator.params.period).map((item) => ({
+                time: formatTimeToUTC8(item.time),
+                value: item.value,
+              }))
+            }
+            break
+          case "VPT":
+            data = calculateVPT(klineSlice).map((item) => ({
+              time: formatTimeToUTC8(item.time),
+              value: item.value,
+            }))
+            break
+        }
 
-          if (data.length > 0) {
-            indicatorsPayload.push({
-              type: indicator.type,
-              params,
-              data,
-            })
-          }
-        })
+        if (data.length > 0) {
+          indicatorsPayload.push({
+            type: indicator.type,
+            params,
+            data,
+          })
+        }
+      })
 
       const payload = {
         tradingPair,
@@ -2202,7 +2610,12 @@ markdown
         const parsed = JSON.parse(trimmedContext)
         // Use JSON.stringify without formatting parameters to compress to single line
         compressedContext = JSON.stringify(parsed)
-        console.log("[v0] Context compressed successfully. Original length:", trimmedContext.length, "Compressed length:", compressedContext.length)
+        console.log(
+          "[v0] Context compressed successfully. Original length:",
+          trimmedContext.length,
+          "Compressed length:",
+          compressedContext.length,
+        )
         console.log("[v0] Compressed context preview:", compressedContext.substring(0, 150))
       } catch (error) {
         // If not valid JSON, use context as is
@@ -2221,7 +2634,7 @@ markdown
         // Check if userMessage starts with context JSON (compressed or uncompressed)
         const contextStr = effectiveContext.trim()
         const compressedContextStr = compressedContext.trim()
-        const separator = '\n\n'
+        const separator = "\n\n"
 
         // First check if finalUserMessage equals context (exact match)
         if (finalUserMessage.trim() === contextStr || finalUserMessage.trim() === compressedContextStr) {
@@ -2250,7 +2663,7 @@ markdown
         }
       } catch (error) {
         // Context is not JSON, just check string match
-        const separator = '\n\n'
+        const separator = "\n\n"
         const trimmedFinalUserMessage = finalUserMessage.trim()
         const trimmedContext = effectiveContext.trim()
         if (trimmedFinalUserMessage === trimmedContext) {
@@ -2263,10 +2676,15 @@ markdown
 
     // Merge context and user message
     const combinedMessage = compressedContext ? `${compressedContext}\n\n${cleanUserMessage}` : cleanUserMessage
-    
+
     // Debug: Log combined message to verify compression
     if (compressedContext && compressedContext !== context) {
-      console.log("[v0] Context was compressed. Original length:", context.length, "Compressed length:", compressedContext.length)
+      console.log(
+        "[v0] Context was compressed. Original length:",
+        context.length,
+        "Compressed length:",
+        compressedContext.length,
+      )
       console.log("[v0] Compressed context preview:", compressedContext.substring(0, 200))
     }
 
@@ -2423,8 +2841,7 @@ markdown
           // Check for reasoning_details (new format for deep thinking models like OLMo, DeepSeek R1, etc.)
           const reasoningDetails = parsedResponse?.choices?.[0]?.message?.reasoning_details?.[0]?.text
           const reasoningContent =
-            parsedResponse?.choices?.[0]?.message?.reasoning_content ||
-            parsedResponse?.choices?.[0]?.message?.reasoning
+            parsedResponse?.choices?.[0]?.message?.reasoning_content || parsedResponse?.choices?.[0]?.message?.reasoning
 
           if (reasoningDetails) {
             // New format: reasoning_details array with text field
@@ -2456,7 +2873,7 @@ markdown
       }
 
       const historyTimestamp = Date.now()
-      let contextTags: string[] = []
+      const contextTags: string[] = []
       try {
         const parsedContext = JSON.parse(compressedContext || effectiveContext || "null")
         if (parsedContext && typeof parsedContext === "object") {
@@ -2602,10 +3019,10 @@ markdown
         requestContent: "",
         requestRaw: "",
         responseContent: "",
-          responseRaw: errorResponse,
-          duration: null, // Duration is not applicable on error
-          contextTags: [],
-        }
+        responseRaw: errorResponse,
+        duration: null, // Duration is not applicable on error
+        contextTags: [],
+      }
       setHistory((prev) => {
         const updated = [newHistoryItem, ...prev]
         // Save to IndexedDB instead of localStorage
@@ -2617,7 +3034,7 @@ markdown
     } finally {
       setLoading(false)
       abortControllerRef.current = null
-      
+
       // Schedule next test after response returns (if timer is running)
       if (isTimerRunningRef.current) {
         scheduleNextTest()
@@ -2832,7 +3249,7 @@ markdown
     setMessageImages([])
     setImageUrl("")
     setShowImageUrlInput(false)
-    setIsAddingImageUrl(false) // Reset loading state
+    setIsAddingImageUrl(false)
     setAutoReloadImages(DEFAULT_VALUES.autoReloadImages) // Reset autoReloadImages
 
     // Reset K-line states
@@ -3245,7 +3662,7 @@ markdown
       if (line.includes("|") && line.trim().startsWith("|") && line.trim().endsWith("|")) {
         const tableRows: React.ReactNode[] = []
         let headerCells: string[] = []
-        
+
         // Parse header row
         if (i < lines.length) {
           const headerLine = lines[i].trim()
@@ -3254,12 +3671,12 @@ markdown
             .map((cell) => cell.trim())
             .filter((cell) => cell.length > 0)
           i++
-          
+
           // Skip separator row (|---|---| or |:---:|)
           if (i < lines.length && lines[i].trim().match(/^\|[\s\-:]+\|/)) {
             i++
           }
-          
+
           // Add header row
           if (headerCells.length > 0) {
             tableRows.push(
@@ -3273,7 +3690,7 @@ markdown
             )
           }
         }
-        
+
         // Parse data rows
         while (i < lines.length) {
           const currentLine = lines[i].trim()
@@ -3284,17 +3701,17 @@ markdown
               i++
               continue
             }
-            
+
             const cells = currentLine
               .split("|")
               .map((cell) => cell.trim())
               .filter((cell) => cell.length > 0)
-            
+
             // Ensure we have the same number of cells as header
             while (cells.length < headerCells.length) {
               cells.push("")
             }
-            
+
             tableRows.push(
               <tr key={i}>
                 {cells.slice(0, headerCells.length).map((cell, idx) => (
@@ -3310,7 +3727,7 @@ markdown
             break
           }
         }
-        
+
         if (tableRows.length > 0) {
           elements.push(
             <div key={`table-${i}`} className="my-4 overflow-x-auto">
@@ -3441,7 +3858,7 @@ markdown
     })
 
     // Links [text](url) - fix the regex from the original $$ pattern
-    currentText = currentText.replace(/\[([^\]]+?)\]\(([^)]+?)\)/g, (match, linkText, url) => {
+    currentText = currentText.replace(/\[([^\]]+?)\]$$([^)]+?)$$/g, (match, linkText, url) => {
       const key = `link-${keyCounter++}`
       parts.push({
         key,
@@ -3479,7 +3896,7 @@ markdown
     let processedContent = content
     let isJson = false
 
-    if (parseResponseMarkdown && !content.includes("\`\`\`")) {
+    if (parseResponseMarkdown && !content.includes("```")) {
       return (
         <>
           {images && images.length > 0 && (
@@ -3532,7 +3949,7 @@ markdown
         // Try to verify it's valid JSON
         JSON.parse(trimmed)
         // If successfully parsed, wrap original content in json code block without formatting
-        processedContent = "\`\`\`json\n" + trimmed + "\n\`\`\`"
+        processedContent = "```json\n" + trimmed + "\n```"
         isJson = true
       }
     } catch (e) {
@@ -3582,9 +3999,9 @@ markdown
           </div>
         )}
         {parts.map((part, index) => {
-          if (part.startsWith("\`\`\`") && part.endsWith("\`\`\`")) {
+          if (part.startsWith("```") && part.endsWith("```")) {
             const lines = part.split("\n")
-            const language = lines[0].replace("\`\`\`", "").trim()
+            const language = lines[0].replace("```", "").trim()
             const codeLines = lines.slice(1, -1)
             const code = codeLines.join("\n")
             const lineCount = codeLines.length
@@ -5090,159 +5507,121 @@ markdown
                   )}
                 </div>
 
-                <div className="space-y-4">
-                  {!enableSystemPromptFile && (
+                <div className="space-y-1.5 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5" />
+                      从外部加载系统提示词
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="enableSystemPromptFile"
+                        checked={enableSystemPromptFile}
+                        onChange={(e) => setEnableSystemPromptFile(e.target.checked)}
+                        className="h-4 w-4 rounded border-input bg-background accent-primary cursor-pointer"
+                      />
+                      <Label htmlFor="enableSystemPromptFile" className="cursor-pointer font-normal text-sm">
+                        启用
+                      </Label>
+                      <input
+                        type="checkbox"
+                        id="autoReloadSystemPrompt"
+                        checked={autoReloadSystemPrompt}
+                        onChange={(e) => setAutoReloadSystemPrompt(e.target.checked)}
+                        disabled={!enableSystemPromptFile}
+                        className="h-4 w-4 rounded border-input bg-background accent-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <Label htmlFor="autoReloadSystemPrompt" className="cursor-pointer font-normal text-sm">
+                        自动重载
+                      </Label>
+                    </div>
+                  </div>
+                  {enableSystemPromptFile && (
                     <>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <Label htmlFor="systemPrompt">系统提示词</Label>
-                          <p className="text-xs text-muted-foreground">为AI设置角色或行为指令</p>
-                        </div>
+                      <div className="flex gap-2">
+                        <Input
+                          id="systemPromptFilePath"
+                          value={systemPromptFilePath}
+                          onChange={(e) => {
+                            setSystemPromptFilePath(e.target.value)
+                            setIsSystemPromptFromLocalFile(false)
+                            systemPromptFileHandleRef.current = null
+                            setLoadedSystemPromptContent("")
+                          }}
+                          placeholder="https://example.com/system-prompt.txt 或点击选择本地文件"
+                          className="text-sm flex-1"
+                        />
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          onClick={() => setIsSystemPromptExpanded(!isSystemPromptExpanded)}
+                          onClick={() => handleLocalFileSelect("systemPrompt")}
+                          className="shrink-0"
                         >
-                          {isSystemPromptExpanded ? (
-                            <>
-                              <ChevronUp className="mr-1 h-4 w-4" />
-                              收起
-                            </>
-                          ) : (
-                            <>
-                              <ChevronDown className="mr-1 h-4 w-4" />
-                              展开
-                            </>
-                          )}
+                          <Upload className="h-4 w-4 mr-1" />
+                          选择文件
                         </Button>
                       </div>
-                      <Textarea
-                        id="systemPrompt"
-                        value={systemPrompt}
-                        onChange={(e) => setSystemPrompt(e.target.value)}
-                        placeholder="例如: 你是一个乐于助人的助手。"
-                        rows={2}
-                        className={isSystemPromptExpanded ? "" : "max-h-32 overflow-y-auto"}
-                      />
+                      <p className="text-xs text-muted-foreground">
+                        支持 HTTP/HTTPS 链接或本地文件。点击"选择文件"按钮可直接选择本地 .txt 或 .md 文件。
+                      </p>
                     </>
                   )}
 
-                  <div className="space-y-1.5 pt-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="systemPromptFilePath" className="flex items-center gap-1.5">
-                        <FileText className="h-3.5 w-3.5" />
-                        从外部加载系统提示词
-                      </Label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id="enableSystemPromptFile"
-                          checked={enableSystemPromptFile}
-                          onChange={(e) => setEnableSystemPromptFile(e.target.checked)}
-                          className="h-4 w-4 rounded border-input bg-background accent-primary cursor-pointer"
-                        />
-                        <Label htmlFor="enableSystemPromptFile" className="cursor-pointer font-normal text-sm">
-                          启用
+                  {enableSystemPromptFile && loadedSystemPromptContent && (
+                    <div className="space-y-1.5 pt-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                          外部加载的系统提示词预览
+                          {isSystemPromptFromLocalFile && (
+                            <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px]">
+                              本地文件
+                            </span>
+                          )}
                         </Label>
-                        <input
-                          type="checkbox"
-                          id="autoReloadSystemPrompt"
-                          checked={autoReloadSystemPrompt}
-                          onChange={(e) => setAutoReloadSystemPrompt(e.target.checked)}
-                          disabled={!enableSystemPromptFile}
-                          className="h-4 w-4 rounded border-input bg-background accent-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
-                        <Label htmlFor="autoReloadSystemPrompt" className="cursor-pointer font-normal text-sm">
-                          自动重载
-                        </Label>
-                      </div>
-                    </div>
-                    {enableSystemPromptFile && (
-                      <>
-                        <div className="flex gap-2">
-                          <Input
-                            id="systemPromptFilePath"
-                            value={systemPromptFilePath}
-                            onChange={(e) => {
-                              setSystemPromptFilePath(e.target.value)
-                              setIsSystemPromptFromLocalFile(false)
-                              systemPromptFileHandleRef.current = null
-                              setLoadedSystemPromptContent("")
-                            }}
-                            placeholder="https://example.com/system-prompt.txt 或点击选择本地文件"
-                            className="text-sm flex-1"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleLocalFileSelect("systemPrompt")}
-                            className="shrink-0"
-                          >
-                            <Upload className="h-4 w-4 mr-1" />
-                            选择文件
-                          </Button>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          支持 HTTP/HTTPS 链接或本地文件。点击"选择文件"按钮可直接选择本地 .txt 或 .md 文件。
-                        </p>
-                      </>
-                    )}
-
-                    {enableSystemPromptFile && loadedSystemPromptContent && (
-                      <div className="space-y-1.5 pt-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                            外部加载的系统提示词预览
-                            {isSystemPromptFromLocalFile && (
-                              <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px]">
-                                本地文件
-                              </span>
-                            )}
-                          </Label>
-                          <div className="flex items-center gap-1">
-                            {isSystemPromptFromLocalFile && systemPromptFileHandleRef.current && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => reloadLocalFile("systemPrompt")}
-                                title="重新加载文件"
-                              >
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                            )}
+                        <div className="flex items-center gap-1">
+                          {isSystemPromptFromLocalFile && systemPromptFileHandleRef.current && (
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => setIsExternalSystemPromptExpanded(!isExternalSystemPromptExpanded)}
+                              onClick={() => reloadLocalFile("systemPrompt")}
+                              title="重新加载文件"
                             >
-                              {isExternalSystemPromptExpanded ? (
-                                <>
-                                  <ChevronUp className="mr-1 h-4 w-4" />
-                                  收起
-                                </>
-                              ) : (
-                                <>
-                                  <ChevronDown className="mr-1 h-4 w-4" />
-                                  展开
-                                </>
-                              )}
+                              <RotateCcw className="h-4 w-4" />
                             </Button>
-                          </div>
+                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsExternalSystemPromptExpanded(!isExternalSystemPromptExpanded)}
+                          >
+                            {isExternalSystemPromptExpanded ? (
+                              <>
+                                <ChevronUp className="mr-1 h-4 w-4" />
+                                收起
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="mr-1 h-4 w-4" />
+                                展开
+                              </>
+                            )}
+                          </Button>
                         </div>
-                        <Textarea
-                          value={loadedSystemPromptContent}
-                          readOnly
-                          className={`bg-muted/50 text-sm font-mono cursor-default overflow-y-auto transition-all duration-200 ${
-                            isExternalSystemPromptExpanded ? "h-60" : "h-20"
-                          }`}
-                        />
                       </div>
-                    )}
-                  </div>
+                      <Textarea
+                        value={loadedSystemPromptContent}
+                        readOnly
+                        className={`bg-muted/50 text-sm font-mono cursor-default overflow-y-auto transition-all duration-200 ${
+                          isExternalSystemPromptExpanded ? "h-60" : "h-20"
+                        }`}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -5395,7 +5774,6 @@ markdown
               </div>
 
               {error && <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
-            </div>
             </CardContent>
           )}
         </Card>
@@ -5537,7 +5915,10 @@ markdown
                                         second: "2-digit",
                                       })}
                                     </span>
-                                    <span className="font-mono text-[10px] text-foreground block truncate" title={item.model}>
+                                    <span
+                                      className="font-mono text-[10px] text-foreground block truncate"
+                                      title={item.model}
+                                    >
                                       {item.model}
                                     </span>
                                     <span className="font-mono text-[10px]">
@@ -5697,10 +6078,10 @@ markdown
                                     )}
                                   </div>
                                   {(() => {
-                                    const hasCodeBlock = item.responseContent.includes("\`\`\`")
+                                    const hasCodeBlock = item.responseContent.includes("```")
                                     const codeBlockLines = hasCodeBlock
                                       ? (item.responseContent
-                                          .split("\`\`\`")
+                                          .split("```")
                                           .filter((_, i) => i % 2 === 1)[0]
                                           ?.split("\n")?.length ?? 0)
                                       : 0

@@ -5011,7 +5011,7 @@ markdown
                           return (
                             <TableRow key={item.timestamp} className="hover:bg-muted/50">
                               <TableCell className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap align-top">
-                                <div className="flex flex-col gap-0.5">\
+                                <div className="flex flex-col gap-0.5">
                                   <span>
                                     {new Date(item.timestamp).toLocaleString("zh-CN", {
                                       month: "2-digit",

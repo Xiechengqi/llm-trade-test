@@ -2784,6 +2784,116 @@ markdown
         i++
         continue
       }
+      if (line.startsWith("#### ")) {
+        elements.push(
+          <h4 key={i} className="text-sm font-bold mt-2 mb-1">
+            {line.slice(5)}
+          </h4>,
+        )
+        i++
+        continue
+      }
+      if (line.startsWith("##### ")) {
+        elements.push(
+          <h5 key={i} className="text-xs font-bold mt-1 mb-1">
+            {line.slice(6)}
+          </h5>,
+        )
+        i++
+        continue
+      }
+      if (line.startsWith("###### ")) {
+        elements.push(
+          <h6 key={i} className="text-xs font-semibold mt-1 mb-1">
+            {line.slice(7)}
+          </h6>,
+        )
+        i++
+        continue
+      }
+
+      // Markdown tables
+      if (line.includes("|") && line.trim().startsWith("|") && line.trim().endsWith("|")) {
+        const tableRows: React.ReactNode[] = []
+        let headerCells: string[] = []
+        
+        // Parse header row
+        if (i < lines.length) {
+          const headerLine = lines[i].trim()
+          headerCells = headerLine
+            .split("|")
+            .map((cell) => cell.trim())
+            .filter((cell) => cell.length > 0)
+          i++
+          
+          // Skip separator row (|---|---| or |:---:|)
+          if (i < lines.length && lines[i].trim().match(/^\|[\s\-:]+\|/)) {
+            i++
+          }
+          
+          // Add header row
+          if (headerCells.length > 0) {
+            tableRows.push(
+              <tr key="header">
+                {headerCells.map((cell, idx) => (
+                  <th key={idx} className="border border-border px-2 py-1 text-left font-semibold bg-muted">
+                    {parseInlineMarkdown(cell)}
+                  </th>
+                ))}
+              </tr>,
+            )
+          }
+        }
+        
+        // Parse data rows
+        while (i < lines.length) {
+          const currentLine = lines[i].trim()
+          // Check if it's still a table row (must start and end with |)
+          if (currentLine.includes("|") && currentLine.startsWith("|") && currentLine.endsWith("|")) {
+            // Skip if it's a separator row
+            if (currentLine.match(/^\|[\s\-:]+\|$/)) {
+              i++
+              continue
+            }
+            
+            const cells = currentLine
+              .split("|")
+              .map((cell) => cell.trim())
+              .filter((cell) => cell.length > 0)
+            
+            // Ensure we have the same number of cells as header
+            while (cells.length < headerCells.length) {
+              cells.push("")
+            }
+            
+            tableRows.push(
+              <tr key={i}>
+                {cells.slice(0, headerCells.length).map((cell, idx) => (
+                  <td key={idx} className="border border-border px-2 py-1">
+                    {parseInlineMarkdown(cell)}
+                  </td>
+                ))}
+              </tr>,
+            )
+            i++
+          } else {
+            // Not a table row anymore, break
+            break
+          }
+        }
+        
+        if (tableRows.length > 0) {
+          elements.push(
+            <div key={`table-${i}`} className="my-4 overflow-x-auto">
+              <table className="border-collapse border border-border w-full text-sm">
+                <thead>{tableRows[0]}</thead>
+                <tbody>{tableRows.slice(1)}</tbody>
+              </table>
+            </div>,
+          )
+        }
+        continue
+      }
 
       // Unordered lists
       if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {

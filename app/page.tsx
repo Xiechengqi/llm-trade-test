@@ -869,19 +869,42 @@ markdown
     }
   }, [tradingPair, klineInterval, klineLimit, klineEndTime, fetchKlineData])
 
+  // Format timestamp to UTC+8 ISO 8601 format (2025-12-23T07:15:00+08:00)
+  const formatTimeToUTC8 = useCallback((timestamp: number): string => {
+    const date = new Date(timestamp)
+    // Get UTC+8 time components
+    const utc8Time = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+    const year = utc8Time.getUTCFullYear()
+    const month = String(utc8Time.getUTCMonth() + 1).padStart(2, "0")
+    const day = String(utc8Time.getUTCDate()).padStart(2, "0")
+    const hours = String(utc8Time.getUTCHours()).padStart(2, "0")
+    const minutes = String(utc8Time.getUTCMinutes()).padStart(2, "0")
+    const seconds = String(utc8Time.getUTCSeconds()).padStart(2, "0")
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+08:00`
+  }, [])
+
   // Handle candle click - put K-line data into user message
   const handleCandleClick = useCallback(
     (dataBeforeClick: KlineData[], clickedCandle: KlineData) => {
-      const formattedData = dataBeforeClick
-        .map((item) => {
-          const date = new Date(item.time + 8 * 60 * 60 * 1000) // Adjust for UTC to local time
-          const timeStr = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")} ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`
-          return `时间: ${timeStr}, 开: ${item.open}, 高: ${item.high}, 低: ${item.low}, 收: ${item.close}, 量: ${item.volume}`
-        })
-        .join(" | ")
+      const klineJson = JSON.stringify(
+        {
+          tradingPair,
+          interval: klineInterval,
+          dataCount: dataBeforeClick.length,
+          klineData: dataBeforeClick.map((item) => ({
+            time: formatTimeToUTC8(item.time),
+            open: item.open,
+            high: item.high,
+            low: item.low,
+            close: item.close,
+            volume: item.volume,
+          })),
+        },
+        null,
+        2,
+      )
 
-      const message = `交易对: ${tradingPair} | 周期: ${klineInterval} | K线数据: ${formattedData}`
-      setUserMessage(message)
+      setUserMessage(klineJson)
 
       // Mark the clicked candle's time
       setMarkedCandleTime(clickedCandle.time)
@@ -2195,23 +2218,23 @@ markdown
           const loadedData = await forceReloadKlineData()
 
           if (loadedData && loadedData.length > 0) {
-            const klineDataText =
-              `交易对: ${tradingPairRef.current} | 周期: ${klineIntervalRef.current} | 数据量: ${loadedData.length}条 | K线数据: ` +
-              loadedData
-                .map((candle, index) => {
-                  const date = new Date(candle.time)
-                  const timeStr = date.toLocaleString("zh-CN", {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                    hour12: false,
-                  })
-                  return `${index + 1}. 时间: ${timeStr}, 开: ${candle.open}, 高: ${candle.high}, 低: ${candle.low}, 收: ${candle.close}, 量: ${candle.volume}`
-                })
-                .join(" | ")
+            const klineDataText = JSON.stringify(
+              {
+                tradingPair: tradingPairRef.current,
+                interval: klineIntervalRef.current,
+                dataCount: loadedData.length,
+                klineData: loadedData.map((candle) => ({
+                  time: formatTimeToUTC8(candle.time),
+                  open: candle.open,
+                  high: candle.high,
+                  low: candle.low,
+                  close: candle.close,
+                  volume: candle.volume,
+                })),
+              },
+              null,
+              2,
+            )
 
             // Update state for UI display
             setUserMessage(klineDataText)
@@ -2302,23 +2325,23 @@ markdown
         console.log("[v0] K-line data reload completed, data length:", loadedData?.length || 0)
 
         if (loadedData && loadedData.length > 0) {
-          const klineDataText =
-            `交易对: ${tradingPair} | 周期: ${klineInterval} | 数据量: ${loadedData.length}条 | K线数据: ` +
-            loadedData
-              .map((candle, index) => {
-                const date = new Date(candle.time) // Use candle.time directly for UTC
-                const timeStr = date.toLocaleString("zh-CN", {
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                  hour12: false,
-                })
-                return `${index + 1}. 时间: ${timeStr}, 开: ${candle.open}, 高: ${candle.high}, 低: ${candle.low}, 收: ${candle.close}, 量: ${candle.volume}`
-              })
-              .join(" | ")
+          const klineDataText = JSON.stringify(
+            {
+              tradingPair,
+              interval: klineInterval,
+              dataCount: loadedData.length,
+              klineData: loadedData.map((candle) => ({
+                time: formatTimeToUTC8(candle.time),
+                open: candle.open,
+                high: candle.high,
+                low: candle.low,
+                close: candle.close,
+                volume: candle.volume,
+              })),
+            },
+            null,
+            2,
+          )
 
           setUserMessage(klineDataText)
           console.log("[v0] Overwrote user message with K-line data, length:", klineDataText.length)

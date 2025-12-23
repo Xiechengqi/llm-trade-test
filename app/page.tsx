@@ -333,6 +333,7 @@ interface HistoryItem {
   timestamp: number
   duration?: number // Response time in milliseconds
   model: string // Add model field to HistoryItem interface
+  tradingPair?: string
   requestContent: string
   requestRaw: string
   responseContent: string
@@ -670,7 +671,7 @@ markdown
   const [isTimerRunning, setIsTimerRunning] = useState(false) // Track if timer is active
   const isTimerRunningRef = useRef(false) // Ref to track timer state for immediate access
   const [responseDuration, setResponseDuration] = useState<number | null>(null)
-  const [isParametersExpanded, setIsParametersExpanded] = useState(true) // Default to expanded
+  const [isParametersExpanded, setIsParametersExpanded] = useState(false)
 
   const [modelHistory, setModelHistory] = useState<ModelHistoryItem[]>([])
   const [modelHistoryPage, setModelHistoryPage] = useState(1)
@@ -2510,6 +2511,7 @@ markdown
         id: historyTimestamp.toString(),
         timestamp: historyTimestamp,
         model: modelToUse, // Use the actual model used
+        tradingPair,
         requestContent,
         requestRaw: requestCurl,
         responseContent,
@@ -2592,13 +2594,14 @@ markdown
       setResponseData(errorResponse)
       setResponseDuration(null) // Reset duration on error
 
-        const newHistoryItem: HistoryItem = {
-          id: Date.now().toString(),
-          timestamp: Date.now(),
-          model: modelToUse, // Add model to history item
-          requestContent: "",
-          requestRaw: "",
-          responseContent: "",
+      const newHistoryItem: HistoryItem = {
+        id: Date.now().toString(),
+        timestamp: Date.now(),
+        model: modelToUse, // Add model to history item
+        tradingPair,
+        requestContent: "",
+        requestRaw: "",
+        responseContent: "",
           responseRaw: errorResponse,
           duration: null, // Duration is not applicable on error
           contextTags: [],
@@ -5512,6 +5515,14 @@ markdown
                             item.timestamp,
                           )
 
+                          const badgeTags: string[] = []
+                          if (item.tradingPair) {
+                            badgeTags.push(item.tradingPair)
+                          }
+                          if (item.contextTags && item.contextTags.length > 0) {
+                            badgeTags.push(...item.contextTags)
+                          }
+
                           return (
                             <TableRow key={item.timestamp} className="hover:bg-muted/50">
                               <TableCell className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap align-top">
@@ -5537,9 +5548,9 @@ markdown
                                       )}
                                     </span>
                                   </div>
-                                  {item.contextTags && item.contextTags.length > 0 && (
+                                  {badgeTags.length > 0 && (
                                     <div className="flex flex-wrap gap-1 pt-1">
-                                      {item.contextTags.map((tag, idx) => (
+                                      {badgeTags.map((tag, idx) => (
                                         <span
                                           key={`${item.id}-tag-${idx}`}
                                           className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"

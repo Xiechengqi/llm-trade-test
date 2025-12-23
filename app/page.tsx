@@ -337,6 +337,7 @@ interface HistoryItem {
   requestRaw: string
   responseContent: string
   responseRaw: string
+  contextTags?: string[]
 }
 
 interface MessageImage {
@@ -2454,6 +2455,57 @@ markdown
       }
 
       const historyTimestamp = Date.now()
+      let contextTags: string[] = []
+      try {
+        const parsedContext = JSON.parse(compressedContext || effectiveContext || "null")
+        if (parsedContext && typeof parsedContext === "object") {
+          if (parsedContext.klineData && Array.isArray(parsedContext.klineData) && parsedContext.klineData.length > 0) {
+            contextTags.push("K线")
+          }
+          if (parsedContext.indicators && Array.isArray(parsedContext.indicators)) {
+            parsedContext.indicators.forEach((indicator: any) => {
+              const type = indicator?.type
+              const params = indicator?.params || {}
+              switch (type) {
+                case "MA":
+                case "EMA":
+                  contextTags.push(`${type}(${params.period ?? "?"})`)
+                  break
+                case "MACD":
+                  contextTags.push(
+                    `MACD(${params.fastPeriod ?? "?"},${params.slowPeriod ?? "?"},${params.signalPeriod ?? "?"})`,
+                  )
+                  break
+                case "BOLL":
+                  contextTags.push(`BOLL(${params.period ?? "?"},${params.stdDev ?? "?"})`)
+                  break
+                case "KDJ":
+                  contextTags.push(`KDJ(${params.period ?? "?"},${params.kPeriod ?? "?"},${params.dPeriod ?? "?"})`)
+                  break
+                case "ATR":
+                case "RSI":
+                case "MFI":
+                  contextTags.push(`${type}(${params.period ?? "?"})`)
+                  break
+                case "VOL":
+                case "VWAP":
+                case "OBV":
+                case "VPT":
+                  contextTags.push(type)
+                  break
+                default:
+                  if (typeof type === "string") {
+                    contextTags.push(type)
+                  }
+                  break
+              }
+            })
+          }
+        }
+      } catch (err) {
+        console.warn("[v0] Failed to parse context for tags:", err)
+      }
+
       const historyItem: HistoryItem = {
         id: historyTimestamp.toString(),
         timestamp: historyTimestamp,
@@ -2463,6 +2515,7 @@ markdown
         responseContent,
         responseRaw: formattedResponse,
         duration: duration, // Store response time
+        contextTags,
       }
 
       // 保存响应图片到 IndexedDB（如果存在）
@@ -2539,16 +2592,17 @@ markdown
       setResponseData(errorResponse)
       setResponseDuration(null) // Reset duration on error
 
-      const newHistoryItem: HistoryItem = {
-        id: Date.now().toString(),
-        timestamp: Date.now(),
-        model: modelToUse, // Add model to history item
-        requestContent: "",
-        requestRaw: "",
-        responseContent: "",
-        responseRaw: errorResponse,
-        duration: null, // Duration is not applicable on error
-      }
+        const newHistoryItem: HistoryItem = {
+          id: Date.now().toString(),
+          timestamp: Date.now(),
+          model: modelToUse, // Add model to history item
+          requestContent: "",
+          requestRaw: "",
+          responseContent: "",
+          responseRaw: errorResponse,
+          duration: null, // Duration is not applicable on error
+          contextTags: [],
+        }
       setHistory((prev) => {
         const updated = [newHistoryItem, ...prev]
         // Save to IndexedDB instead of localStorage
@@ -5411,7 +5465,7 @@ markdown
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-[160px]">时间/模型/用时</TableHead>
+                          <TableHead className="w-[160px]">时间/模型/用时/上下文</TableHead>
                           {showRequestContent && (
                             <TableHead>
                               <div className="flex items-center gap-2">
@@ -5461,27 +5515,40 @@ markdown
                           return (
                             <TableRow key={item.timestamp} className="hover:bg-muted/50">
                               <TableCell className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap align-top">
-                                <div className="flex flex-col gap-0.5">
-                                  <span>
-                                    {new Date(item.timestamp).toLocaleString("zh-CN", {
-                                      month: "2-digit",
-                                      day: "2-digit",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                      second: "2-digit",
-                                    })}
-                                  </span>
-
-                                  <span className="font-mono text-[10px] text-foreground truncate" title={item.model}>
-                                    {item.model}
-                                  </span>
-                                  <span className="font-mono text-[10px]">
-                                    {item.duration !== undefined && item.duration !== null ? (
-                                      <>{item.duration}ms</>
-                                    ) : (
-                                      <span className="text-muted-foreground/50">-</span>
-                                    )}
-                                  </span>
+                                <div className="flex flex-col gap-1">
+                                  <div>
+                                    <span>
+                                      {new Date(item.timestamp).toLocaleString("zh-CN", {
+                                        month: "2-digit",
+                                        day: "2-digit",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                        second: "2-digit",
+                                      })}
+                                    </span>
+                                    <span className="font-mono text-[10px] text-foreground block truncate" title={item.model}>
+                                      {item.model}
+                                    </span>
+                                    <span className="font-mono text-[10px]">
+                                      {item.duration !== undefined && item.duration !== null ? (
+                                        <>{item.duration}ms</>
+                                      ) : (
+                                        <span className="text-muted-foreground/50">-</span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  {item.contextTags && item.contextTags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 pt-1">
+                                      {item.contextTags.map((tag, idx) => (
+                                        <span
+                                          key={`${item.id}-tag-${idx}`}
+                                          className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                                        >
+                                          {tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </TableCell>
 

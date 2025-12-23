@@ -645,6 +645,7 @@ markdown
   const [timerInterval, setTimerInterval] = useState(DEFAULT_VALUES.timerInterval)
   const timerRef = useRef<NodeJS.Timeout | null>(null) // Use useRef for timer
   const [isTimerRunning, setIsTimerRunning] = useState(false) // Track if timer is active
+  const isTimerRunningRef = useRef(false) // Ref to track timer state for immediate access
   const [responseDuration, setResponseDuration] = useState<number | null>(null)
   const [isParametersExpanded, setIsParametersExpanded] = useState(true) // Default to expanded
 
@@ -2159,22 +2160,33 @@ markdown
     } finally {
       setLoading(false)
       abortControllerRef.current = null
+      
+      // Schedule next test after response returns (if timer is running)
+      if (isTimerRunningRef.current) {
+        scheduleNextTest()
+      }
     }
   }
 
-  const startTimer = () => {
-    // Clear any existing timer
-    if (timerRef.current) {
-      clearInterval(timerRef.current)
+  // Schedule next test after response returns
+  const scheduleNextTest = async () => {
+    // Check if timer is still running (use ref for immediate check)
+    if (!isTimerRunningRef.current) {
+      return
     }
 
-    setIsTimerRunning(true)
+    // Clear any existing timer
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+    }
 
-    // Execute handleTest immediately for the first time
-    handleTest()
+    // Schedule next test after timerInterval seconds
+    timerRef.current = setTimeout(async () => {
+      // Check if timer is still running (user might have stopped it)
+      if (!isTimerRunningRef.current) {
+        return
+      }
 
-    // Set up the interval for subsequent calls with K-line reload
-    timerRef.current = setInterval(async () => {
       // Check if there's a selected candle
       if (markedCandleTime === null) {
         // No selected candle, reload K-line data before test
@@ -2201,26 +2213,50 @@ markdown
                 })
                 .join("\n")
 
+            // Update state for UI display
             setUserMessage(klineDataText)
             console.log("[v0] Timer tick: Updated user message with fresh K-line data")
+            
+            // Execute the test with the new message directly (not relying on state update)
+            // handleTest will call scheduleNextTest again after response returns
+            handleTest(klineDataText)
+          } else {
+            // If no data loaded, use current message
+            handleTest()
           }
         } catch (error) {
           console.error("[v0] Timer tick: Error reloading K-line data:", error)
+          // On error, still execute test with current message
+          handleTest()
         }
       } else {
         console.log("[v0] Timer tick: Selected candle exists, using existing message")
+        // Execute the test with current message
+        handleTest()
       }
-
-      // Execute the test with updated message
-      handleTest()
     }, timerInterval * 1000) // Convert seconds to milliseconds
+  }
+
+  const startTimer = (initialMessage?: string) => {
+    // Clear any existing timer
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+    }
+
+    isTimerRunningRef.current = true
+    setIsTimerRunning(true)
+
+    // Execute handleTest immediately for the first time with initial message if provided
+    // handleTest will call scheduleNextTest after response returns
+    handleTest(initialMessage)
   }
 
   const stopTimer = () => {
     if (timerRef.current) {
-      clearInterval(timerRef.current)
+      clearTimeout(timerRef.current)
       timerRef.current = null
     }
+    isTimerRunningRef.current = false
     setIsTimerRunning(false)
   }
 
@@ -2295,7 +2331,7 @@ markdown
           })
 
           if (timerEnabled) {
-            startTimer()
+            startTimer(klineDataText)
           } else {
             handleTest(klineDataText)
           }

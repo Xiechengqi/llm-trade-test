@@ -565,7 +565,7 @@ markdown
 
 #### 4. 极端风险提示
 [例如：RSI 处于高位且成交量持续萎缩，存在二探底部的风险。]`,
-    userMessage: "你是谁？中文回复",
+    userMessage: "",
     promptFilePath: "",
     enablePromptFile: false, // Add enablePromptFile state with default false
     systemPromptFilePath: "",
@@ -3349,59 +3349,67 @@ markdown
   }
 
   const parseInlineMarkdown = (text: string): React.ReactNode => {
-    const parts: React.ReactNode[] = []
+    const parts: { key: string; element: React.ReactNode }[] = []
     let currentText = text
     let keyCounter = 0
 
-    // Bold **text**
-    currentText = currentText.replace(/\*\*(.+?)\*\*/g, (_, content) => {
+    // Bold **text** - improved regex to handle edge cases like **关键位:**
+    // Use [^*] to ensure we don't match nested ** inside
+    currentText = currentText.replace(/\*\*([^*]+?)\*\*/g, (match, content) => {
       const key = `bold-${keyCounter++}`
-      parts.push(<strong key={key}>{content}</strong>)
+      parts.push({ key, element: <strong key={key}>{content}</strong> })
       return `<<${key}>>`
     })
 
-    // Italic *text*
-    currentText = currentText.replace(/\*(.+?)\*/g, (_, content) => {
+    // Italic *text* - only match single * that are not part of **
+    // Match *text* but avoid matching **text** by checking it's not preceded or followed by *
+    currentText = currentText.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, (match, content) => {
       const key = `italic-${keyCounter++}`
-      parts.push(<em key={key}>{content}</em>)
+      parts.push({ key, element: <em key={key}>{content}</em> })
       return `<<${key}>>`
     })
 
     // Inline code `code`
-    currentText = currentText.replace(/`(.+?)`/g, (_, content) => {
+    currentText = currentText.replace(/`([^`]+?)`/g, (match, content) => {
       const key = `code-${keyCounter++}`
-      parts.push(
-        <code key={key} className="bg-muted px-1 py-0.5 rounded text-xs">
-          {content}
-        </code>,
-      )
+      parts.push({
+        key,
+        element: (
+          <code key={key} className="bg-muted px-1 py-0.5 rounded text-xs">
+            {content}
+          </code>
+        ),
+      })
       return `<<${key}>>`
     })
 
-    // Links [text](url)
-    currentText = currentText.replace(/\[(.+?)\]$$(.+?)$$/g, (_, linkText, url) => {
+    // Links [text](url) - fix the regex from the original $$ pattern
+    currentText = currentText.replace(/\[([^\]]+?)\]\(([^)]+?)\)/g, (match, linkText, url) => {
       const key = `link-${keyCounter++}`
-      parts.push(
-        <a key={key} href={url} className="text-primary underline" target="_blank" rel="noopener noreferrer">
-          {linkText}
-        </a>,
-      )
+      parts.push({
+        key,
+        element: (
+          <a key={key} href={url} className="text-primary underline" target="_blank" rel="noopener noreferrer">
+            {linkText}
+          </a>
+        ),
+      })
       return `<<${key}>>`
     })
 
     // Split by placeholders and reconstruct
-    const segments = currentText.split(/<<(.+?)>>/)
+    const segments = currentText.split(/(<<[^>]+>>)/)
     const result: React.ReactNode[] = []
 
-    segments.forEach((segment, idx) => {
-      if (
-        segment.startsWith("bold-") ||
-        segment.startsWith("italic-") ||
-        segment.startsWith("code-") ||
-        segment.startsWith("link-")
-      ) {
-        const part = parts.find((_, i) => `${segment}` === Object.keys(parts)[i])
-        if (part) result.push(part)
+    segments.forEach((segment) => {
+      if (segment.startsWith("<<") && segment.endsWith(">>")) {
+        const key = segment.slice(2, -2)
+        const part = parts.find((p) => p.key === key)
+        if (part) {
+          result.push(part.element)
+        } else {
+          result.push(segment)
+        }
       } else if (segment) {
         result.push(segment)
       }

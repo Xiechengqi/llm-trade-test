@@ -2702,6 +2702,7 @@ FORMATTED OUTPUT (格式化输出规范):
                 "X-Title": title,
                 "X-Tags": "trade,kline,long",
                 "X-Priority": priority,
+                Markdown: "yes",
               },
               body: messageBody,
             })

@@ -395,29 +395,6 @@ export function CandlestickChart({
   }, [data, normalizeToSeconds])
 
   useEffect(() => {
-    if (!markersPluginRef.current) return
-
-    if (markerTime !== null) {
-      const hasMatchingCandle = data.some((item) => normalizeToSeconds(item.time) === markerTime)
-      if (hasMatchingCandle) {
-        const markers: SeriesMarker<Time>[] = [
-          {
-            time: markerTime as Time,
-            position: "aboveBar",
-            color: "#000000",
-            shape: "arrowDown",
-            text: "已选",
-          },
-        ]
-        markersPluginRef.current.setMarkers(markers)
-        return
-      }
-    }
-
-    markersPluginRef.current.setMarkers([])
-  }, [markerTime, data, normalizeToSeconds])
-
-  useEffect(() => {
     if (markedCandleTime === null) {
       setMarkerTime(null)
       return
@@ -813,7 +790,7 @@ export function CandlestickChart({
       })
     }
 
-    if (candleScores) {
+    if (candleScores && candleScores.size > 0) {
       candleScores.forEach((score, timestamp) => {
         const normalizedTime = normalizeToSeconds(timestamp)
         // Find if this candle exists in data

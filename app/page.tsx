@@ -596,7 +596,20 @@ FORMATTED OUTPUT (格式化输出规范):
     prompt: "", // Added prompt to default values
   }
 
-  const [candleScores, setCandleScores] = useState<Map<number, number>>(new Map())
+  const [candleScores, setCandleScores] = useState<Map<number, number>>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("candleScores")
+      if (saved) {
+        try {
+          const obj = JSON.parse(saved)
+          return new Map(Object.entries(obj).map(([k, v]) => [Number(k), v as number]))
+        } catch {
+          return new Map()
+        }
+      }
+    }
+    return new Map()
+  })
 
   const [provider, setProvider] = useState(DEFAULT_VALUES.provider)
   const [endpoint, setEndpoint] = useState("") // This state seems redundant with baseURL, consider consolidating.
@@ -768,6 +781,18 @@ FORMATTED OUTPUT (格式化输出规范):
       }
     }
   }, [klineEndTime])
+
+  // Save candleScores to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (candleScores.size > 0) {
+        const obj = Object.fromEntries(candleScores)
+        localStorage.setItem("candleScores", JSON.stringify(obj))
+      } else {
+        localStorage.removeItem("candleScores")
+      }
+    }
+  }, [candleScores])
 
   // Popular trading pairs for quick selection - organized by category
   const popularPairs = [
@@ -2599,6 +2624,13 @@ FORMATTED OUTPUT (格式化输出规范):
     setResponseDuration(null)
     abortControllerRef.current = new AbortController()
 
+    // Show loading toast
+    const loadingToast = toast({
+      title: "等待响应",
+      description: "正在发送请求并等待 AI 响应...",
+      duration: Number.POSITIVE_INFINITY, // Never auto-dismiss
+    })
+
     // CHANGE: Store reloaded images in a variable to use in the API request
     let currentImages = messageImages
 
@@ -2623,6 +2655,7 @@ FORMATTED OUTPUT (格式化输出规范):
     }
 
     if (!apiKey) {
+      loadingToast.dismiss()
       setError("Please provide an API key")
       toast({
         variant: "destructive",
@@ -3097,10 +3130,12 @@ FORMATTED OUTPUT (格式化输出规范):
           title: "请求成功",
           description: `API 响应状态: ${response.status}`,
         })
+        loadingToast.dismiss() // Close loading toast on success
       }
     } catch (error: any) {
       // Changed to any to access error.name and error.message
       clearTimeout(timeoutId)
+      loadingToast.dismiss() // Close loading toast on error
       console.error("[v0] Error during test:", error)
 
       if (error.name === "AbortError") {
@@ -3151,6 +3186,7 @@ FORMATTED OUTPUT (格式化输出规范):
         return updated
       })
     } finally {
+      loadingToast.dismiss() // Ensure loading toast is closed
       setLoading(false)
       abortControllerRef.current = null
 
@@ -3425,6 +3461,14 @@ FORMATTED OUTPUT (格式化输出规范):
   const handleReset = () => {
     handleResetApiConfig()
     handleResetParameters()
+  }
+
+  const handleClearAllScores = () => {
+    setCandleScores(new Map())
+    toast({
+      title: "看多评分已清空",
+      description: "所有蜡烛看多评分标记已被删除",
+    })
   }
 
   const handleDeleteAllHistory = () => {
@@ -5234,6 +5278,50 @@ FORMATTED OUTPUT (格式化输出规范):
             </div>
           </CardHeader>
           <CardContent className="p-6">
+            {/* Candle scores display */}
+            {candleScores.size > 0 && (
+              <div className="mb-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    已标记看多评分 ({candleScores.size})
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleClearAllScores}
+                  >
+                    <RotateCcw className="mr-1 h-3 w-3" />
+                    清除所有评分
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(candleScores.entries())
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 10)
+                    .map(([time, score]) => {
+                      const scoreColor = score >= 70 ? "text-green-600" : score >= 40 ? "text-orange-600" : "text-red-600"
+                      const scoreBg = score >= 70 ? "bg-green-50 dark:bg-green-950/30" : score >= 40 ? "bg-orange-50 dark:bg-orange-950/30" : "bg-red-50 dark:bg-red-950/30"
+                      return (
+                        <div
+                          key={time}
+                          className={`flex items-center gap-2 text-xs px-2 py-1 rounded-md ${scoreBg}`}
+                        >
+                          <span className={scoreColor}>●</span>
+                          <span className="text-muted-foreground font-mono">{new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')}</span>
+                          <span className={`font-medium ${scoreColor}`}>{score}</span>
+                        </div>
+                      )
+                    })}
+                  {candleScores.size > 10 && (
+                    <div className="text-xs text-muted-foreground px-2 py-1">
+                      还有 {candleScores.size - 10} 个...
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <CandlestickChart
               data={klineData}
               onCandleClick={handleCandleClick}

@@ -613,29 +613,31 @@ FORMATTED OUTPUT (格式化输出规范):
     return new Map()
   })
 
-  // Follow-latest score: bound to the latest candle when no candle is selected
-  const [followLatestScore, setFollowLatestScore] = useState<{ score: number; timestamp: number } | null>(() => {
+  // Follow-latest scores: array of scores that follow the latest candle when no candle is selected
+  const [followLatestScores, setFollowLatestScores] = useState<Array<{ score: number; timestamp: number }>>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("followLatestScore")
+      const saved = localStorage.getItem("followLatestScores")
       if (saved) {
         try {
           return JSON.parse(saved)
         } catch {
-          return null
+          return []
         }
       }
     }
-    return null
+    return []
   })
 
   // Combined scores for display (fixed + follow-latest mapped to -1 for chart rendering)
   const candleScores = useMemo(() => {
     const combined = new Map<number, number>(fixedCandleScores)
-    if (followLatestScore !== null) {
-      combined.set(-1, followLatestScore.score) // Use -1 as marker for follow-latest
+    // Add only the latest follow-latest score to the chart (mapped to -1)
+    if (followLatestScores.length > 0) {
+      const latest = followLatestScores[followLatestScores.length - 1]
+      combined.set(-1, latest.score) // Use -1 as marker for follow-latest
     }
     return combined
-  }, [fixedCandleScores, followLatestScore])
+  }, [fixedCandleScores, followLatestScores])
 
   const [provider, setProvider] = useState(DEFAULT_VALUES.provider)
   const [endpoint, setEndpoint] = useState("") // This state seems redundant with baseURL, consider consolidating.
@@ -822,16 +824,16 @@ FORMATTED OUTPUT (格式化输出规范):
     }
   }, [fixedCandleScores])
 
-  // Save followLatestScore to localStorage
+  // Save followLatestScores to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      if (followLatestScore !== null) {
-        localStorage.setItem("followLatestScore", JSON.stringify(followLatestScore))
+      if (followLatestScores.length > 0) {
+        localStorage.setItem("followLatestScores", JSON.stringify(followLatestScores))
       } else {
-        localStorage.removeItem("followLatestScore")
+        localStorage.removeItem("followLatestScores")
       }
     }
-  }, [followLatestScore])
+  }, [followLatestScores])
 
   // Popular trading pairs for quick selection - organized by category
   const popularPairs = [
@@ -3287,10 +3289,10 @@ FORMATTED OUTPUT (格式化输出规范):
               return newScores
             })
           } else {
-            // No candle marked: save as follow-latest score
+            // No candle marked: save as follow-latest score (append to array)
             const latestCandle = klineData[klineData.length - 1]
             console.log(`[v0] Parsed score ${parsedScore} for latest candle (will follow newest candle)`)
-            setFollowLatestScore({ score: parsedScore, timestamp: latestCandle.time })
+            setFollowLatestScores((prev) => [...prev, { score: parsedScore, timestamp: latestCandle.time }])
           }
 
           if (parsedScore >= 70 && ntfyTopics.trim()) {
@@ -3679,7 +3681,7 @@ FORMATTED OUTPUT (格式化输出规范):
 
   const handleClearAllScores = () => {
     setFixedCandleScores(new Map())
-    setFollowLatestScore(null)
+    setFollowLatestScores([])
     toast({
       title: "看多评分已清空",
       description: "所有蜡烛看多评分标记已被删除",
@@ -5507,7 +5509,7 @@ FORMATTED OUTPUT (格式化输出规范):
               <div className="mb-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-muted-foreground">
-                    已标记看多评分 ({candleScores.size})
+                    已标记看多评分 ({fixedCandleScores.size + followLatestScores.length})
                   </div>
                   <Button
                     variant="ghost"
@@ -5520,20 +5522,23 @@ FORMATTED OUTPUT (格式化输出规范):
                   </Button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {Array.from(candleScores.entries())
-                    .sort(([, a], [, b]) => b - a)
+                  {[
+                    // Fixed scores
+                    ...Array.from(fixedCandleScores.entries()).map(([time, score]) => ({ time, score, isFollowLatest: false })),
+                    // Follow-latest scores (all historical)
+                    ...followLatestScores.map((item) => ({ time: item.timestamp, score: item.score, isFollowLatest: true })),
+                  ]
+                    .sort((a, b) => b.score - a.score)
                     .slice(0, 10)
-                    .map(([time, score]) => {
+                    .map(({ time, score, isFollowLatest }) => {
                       const scoreColor = score >= 70 ? "text-green-600" : score >= 40 ? "text-orange-600" : "text-red-600"
                       const scoreBg = score >= 70 ? "bg-green-50 dark:bg-green-950/30" : score >= 40 ? "bg-orange-50 dark:bg-orange-950/30" : "bg-red-50 dark:bg-red-950/30"
-                      // Handle special marker for follow-latest score
-                      const isFollowLatest = time === -1
                       const displayTime = isFollowLatest
-                        ? `最新蜡烛 (动态) - ${followLatestScore ? new Date(followLatestScore.timestamp).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-') : ''}`
+                        ? `最新蜡烛 (动态) - ${new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')}`
                         : new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')
                       return (
                         <div
-                          key={time}
+                          key={`${time}-${isFollowLatest}`}
                           className={`flex items-center gap-2 text-xs px-2 py-1 rounded-md ${scoreBg}`}
                         >
                           <span className={scoreColor}>●</span>
@@ -5543,9 +5548,9 @@ FORMATTED OUTPUT (格式化输出规范):
                         </div>
                       )
                     })}
-                  {candleScores.size > 10 && (
+                  {fixedCandleScores.size + followLatestScores.length > 10 && (
                     <div className="text-xs text-muted-foreground px-2 py-1">
-                      还有 {candleScores.size - 10} 个...
+                      还有 {fixedCandleScores.size + followLatestScores.length - 10} 个...
                     </div>
                   )}
                 </div>

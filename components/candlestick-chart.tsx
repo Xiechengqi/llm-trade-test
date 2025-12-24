@@ -35,6 +35,9 @@ import {
 } from "@/lib/indicators"
 import type { KlineData } from "@/lib/types"
 
+// Special marker for candle scores that should always follow the latest candle
+const LATEST_CANDLE_MARKER = -1
+
 type MarketType = "crypto" | "stock"
 
 // Default crypto pairs fallback
@@ -792,19 +795,33 @@ export function CandlestickChart({
 
     if (candleScores && candleScores.size > 0) {
       candleScores.forEach((score, timestamp) => {
-        const normalizedTime = normalizeToSeconds(timestamp)
-        // Find if this candle exists in data
-        const candleExists = data.some((candle) => normalizeToSeconds(candle.time) === normalizedTime)
+        let markerTime: number
 
-        if (candleExists) {
-          markers.push({
-            time: normalizedTime as Time,
-            position: "belowBar",
-            color: score >= 70 ? "#10b981" : score >= 40 ? "#f59e0b" : "#ef4444",
-            shape: "circle",
-            text: score.toFixed(0),
-          })
+        // Handle special marker that follows the latest candle
+        if (timestamp === LATEST_CANDLE_MARKER) {
+          // Use the last candle in current data
+          const latestCandle = data[data.length - 1]
+          if (latestCandle) {
+            markerTime = normalizeToSeconds(latestCandle.time)
+          } else {
+            return // No data, skip this marker
+          }
+        } else {
+          markerTime = normalizeToSeconds(timestamp)
+          // Find if this candle exists in data
+          const candleExists = data.some((candle) => normalizeToSeconds(candle.time) === markerTime)
+          if (!candleExists) {
+            return // Candle not in current data, skip this marker
+          }
         }
+
+        markers.push({
+          time: markerTime as Time,
+          position: "belowBar",
+          color: score >= 70 ? "#10b981" : score >= 40 ? "#f59e0b" : "#ef4444",
+          shape: "circle",
+          text: score.toFixed(0),
+        })
       })
     }
 

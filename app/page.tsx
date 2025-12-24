@@ -518,6 +518,9 @@ const formatRequestContentForDisplay = (requestContent: string): string => {
   }
 }
 
+// Special marker for candle scores that should always follow the latest candle
+const LATEST_CANDLE_MARKER = -1
+
 export default function Home() {
   // CHANGE: Renamed component from LLMAPITester to Home
   const DEFAULT_VALUES = {
@@ -3240,17 +3243,19 @@ FORMATTED OUTPUT (格式化输出规范):
       // Parse and save score
       let candleTimeToAssociate = markedCandleTime
 
-      // If no candle is marked, automatically use the latest (last) candle
+      // If no candle is marked, use a special marker that always follows the latest candle
       if (!candleTimeToAssociate && klineData.length > 0) {
-        const latestCandle = klineData[klineData.length - 1]
-        candleTimeToAssociate = latestCandle.time
-        console.log(`[v0] No candle marked, automatically using latest candle: ${new Date(candleTimeToAssociate).toLocaleString()}`)
+        candleTimeToAssociate = LATEST_CANDLE_MARKER
+        console.log(`[v0] No candle marked, using dynamic latest marker (will always follow the newest candle)`)
       }
 
       if (responseContent && candleTimeToAssociate) {
         const parsedScore = parseScoreFromResponse(responseContent)
         if (parsedScore !== null) {
-          console.log(`[v0] Parsed score ${parsedScore} for candle at time ${candleTimeToAssociate}`)
+          const displayTime = candleTimeToAssociate === LATEST_CANDLE_MARKER
+            ? "latest (dynamic)"
+            : new Date(candleTimeToAssociate).toLocaleString()
+          console.log(`[v0] Parsed score ${parsedScore} for candle at time ${displayTime}`)
           setCandleScores((prev) => {
             const newScores = new Map(prev)
             newScores.set(candleTimeToAssociate, parsedScore)
@@ -3258,9 +3263,13 @@ FORMATTED OUTPUT (格式化输出规范):
           })
           if (parsedScore >= 70 && ntfyTopics.trim()) {
             const summaryText = extractSummaryAfterScore(responseContent)
+            // For notification, use the actual latest candle time
+            const notificationCandleTime = candleTimeToAssociate === LATEST_CANDLE_MARKER && klineData.length > 0
+              ? klineData[klineData.length - 1].time
+              : candleTimeToAssociate
             void sendNtfyNotification({
               score: parsedScore,
-              candleTime: candleTimeToAssociate,
+              candleTime: notificationCandleTime,
               summary: summaryText,
             })
           }
@@ -5484,13 +5493,17 @@ FORMATTED OUTPUT (格式化输出规范):
                     .map(([time, score]) => {
                       const scoreColor = score >= 70 ? "text-green-600" : score >= 40 ? "text-orange-600" : "text-red-600"
                       const scoreBg = score >= 70 ? "bg-green-50 dark:bg-green-950/30" : score >= 40 ? "bg-orange-50 dark:bg-orange-950/30" : "bg-red-50 dark:bg-red-950/30"
+                      // Handle special marker for dynamic latest candle
+                      const displayTime = time === LATEST_CANDLE_MARKER
+                        ? "最新蜡烛 (动态)"
+                        : new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')
                       return (
                         <div
                           key={time}
                           className={`flex items-center gap-2 text-xs px-2 py-1 rounded-md ${scoreBg}`}
                         >
                           <span className={scoreColor}>●</span>
-                          <span className="text-muted-foreground font-mono">{new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')}</span>
+                          <span className="text-muted-foreground font-mono">{displayTime}</span>
                           <span className={`font-medium ${scoreColor}`}>{score}</span>
                         </div>
                       )

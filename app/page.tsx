@@ -5493,12 +5493,50 @@ markdown
                   )}
                 </div>
 
-                <div className="space-y-1.5 pt-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-1.5">
-                      <FileText className="h-3.5 w-3.5" />
-                      从外部加载系统提示词
-                    </Label>
+                <div className="space-y-4">
+                  {!enableSystemPromptFile && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label htmlFor="systemPrompt">系统提示词</Label>
+                          <p className="text-xs text-muted-foreground">为AI设置角色或行为指令</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setIsSystemPromptExpanded(!isSystemPromptExpanded)}
+                        >
+                          {isSystemPromptExpanded ? (
+                            <>
+                              <ChevronUp className="mr-1 h-4 w-4" />
+                              收起
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="mr-1 h-4 w-4" />
+                              展开
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      <Textarea
+                        id="systemPrompt"
+                        value={systemPrompt}
+                        onChange={(e) => setSystemPrompt(e.target.value)}
+                        placeholder="例如: 你是一个乐于助人的助手。"
+                        rows={2}
+                        className={isSystemPromptExpanded ? "" : "max-h-32 overflow-y-auto"}
+                      />
+                    </>
+                  )}
+
+                  <div className="space-y-1.5 pt-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="flex items-center gap-1.5">
+                        <FileText className="h-3.5 w-3.5" />
+                        从外部加载系统提示词
+                      </Label>
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
@@ -5607,6 +5645,7 @@ markdown
                       />
                     </div>
                   )}
+                </div>
                 </div>
               </div>
 

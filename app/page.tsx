@@ -2581,14 +2581,17 @@ FORMATTED OUTPUT (格式化输出规范):
   const parseScoreFromResponse = (responseContent: string): number | null => {
     if (!responseContent) return null
 
+    // Remove asterisks and whitespace before running regex detection
+    const sanitizedContent = responseContent.replace(/[\*\s]/g, "")
+
     // Pattern 1: 主要格式 - "得分：XX" (系统提示词定义的标准格式)
     // 匹配多种变体：
     // - 得分：32
     // - 得分：**32**
     // - 得分：**32 (偏空/观望)**
     // - 得分：38/100
-    const mainScorePattern = /得分[:：]\s*(?:\*\*)?\s*(\d{1,3})(?:\.\d+)?/
-    const mainMatch = responseContent.match(mainScorePattern)
+    const mainScorePattern = /得分[:：]?(\d{1,3})(?:\.\d+)?/
+    const mainMatch = sanitizedContent.match(mainScorePattern)
     if (mainMatch) {
       const score = Number.parseFloat(mainMatch[1])
       if (!isNaN(score) && score >= 0 && score <= 100) {
@@ -2597,8 +2600,8 @@ FORMATTED OUTPUT (格式化输出规范):
     }
 
     // Pattern 2: 备选格式 - 英文 "Score: XX"
-    const englishScorePattern = /Score[:：]\s*(?:\*\*)?\s*(\d{1,3})(?:\.\d+)?/i
-    const englishMatch = responseContent.match(englishScorePattern)
+    const englishScorePattern = /Score[:：]?(\d{1,3})(?:\.\d+)?/i
+    const englishMatch = sanitizedContent.match(englishScorePattern)
     if (englishMatch) {
       const score = Number.parseFloat(englishMatch[1])
       if (!isNaN(score) && score >= 0 && score <= 100) {
@@ -2607,8 +2610,8 @@ FORMATTED OUTPUT (格式化输出规范):
     }
 
     // Pattern 3: 其他中文变体 "分数：XX"
-    const otherChinesePattern = /分数[:：]\s*(?:\*\*)?\s*(\d{1,3})(?:\.\d+)?/
-    const otherChineseMatch = responseContent.match(otherChinesePattern)
+    const otherChinesePattern = /分数[:：]?(\d{1,3})(?:\.\d+)?/
+    const otherChineseMatch = sanitizedContent.match(otherChinesePattern)
     if (otherChineseMatch) {
       const score = Number.parseFloat(otherChineseMatch[1])
       if (!isNaN(score) && score >= 0 && score <= 100) {

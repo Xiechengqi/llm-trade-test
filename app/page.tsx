@@ -693,6 +693,7 @@ FORMATTED OUTPUT (格式化输出规范):
   const timerRef = useRef<NodeJS.Timeout | null>(null) // Use useRef for timer
   const [isTimerRunning, setIsTimerRunning] = useState(false) // Track if timer is active
   const isTimerRunningRef = useRef(false) // Ref to track timer state for immediate access
+  const audioContextRef = useRef<AudioContext | null>(null)
   const [responseDuration, setResponseDuration] = useState<number | null>(null)
   const [isParametersExpanded, setIsParametersExpanded] = useState(false)
 
@@ -2719,6 +2720,50 @@ FORMATTED OUTPUT (格式化输出规范):
     [ntfyTopics, tradingPair],
   )
 
+  const playNotificationSound = useCallback(() => {
+    if (typeof window === "undefined") return
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextClass) return
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContextClass()
+    }
+
+    const audioContext = audioContextRef.current
+    const startTone = () => {
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+
+      oscillator.type = "triangle"
+      oscillator.frequency.setValueAtTime(880, audioContext.currentTime)
+
+      gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.2, audioContext.currentTime + 0.01)
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.25)
+
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+
+      oscillator.start()
+      oscillator.stop(audioContext.currentTime + 0.3)
+      oscillator.onended = () => {
+        oscillator.disconnect()
+        gainNode.disconnect()
+      }
+    }
+
+    if (audioContext.state === "suspended") {
+      audioContext
+        .resume()
+        .then(startTone)
+        .catch((error) => {
+          console.warn("[v0] 无法恢复音频上下文：", error)
+        })
+    } else {
+      startTone()
+    }
+  }, [])
+
   const handleTest = async (messageOverride?: string, contextOverride?: string) => {
     // if (loading) return // Prevent multiple simultaneous tests
     console.log("[v0] handleTest called, loading:", loading)
@@ -2739,6 +2784,7 @@ FORMATTED OUTPUT (格式化输出规范):
 
     // CHANGE: Store reloaded images in a variable to use in the API request
     let currentImages = messageImages
+    let shouldPlayCompletionSound = false
 
     if (autoReloadImages && messageImages.some((img) => img.type === "url")) {
       console.log("[v0] Auto-reloading images before test...")
@@ -3246,6 +3292,7 @@ FORMATTED OUTPUT (格式化输出规范):
         })
         loadingToast.dismiss() // Close loading toast on success
       }
+      shouldPlayCompletionSound = true
     } catch (error: any) {
       // Changed to any to access error.name and error.message
       clearTimeout(timeoutId)
@@ -3273,6 +3320,10 @@ FORMATTED OUTPUT (格式化输出规范):
           title: "错误",
           description: error.message || "发生未知错误",
         })
+      }
+
+      if (error.name !== "AbortError") {
+        shouldPlayCompletionSound = true
       }
 
       const errorResponse = JSON.stringify({ error: error.message || "Unknown error" })
@@ -3303,6 +3354,10 @@ FORMATTED OUTPUT (格式化输出规范):
       loadingToast.dismiss() // Ensure loading toast is closed
       setLoading(false)
       abortControllerRef.current = null
+
+      if (shouldPlayCompletionSound) {
+        playNotificationSound()
+      }
 
       // Schedule next test after response returns (if timer is running)
       if (isTimerRunningRef.current) {

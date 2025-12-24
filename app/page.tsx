@@ -2590,7 +2590,7 @@ FORMATTED OUTPUT (格式化输出规范):
     // - 得分：**32**
     // - 得分：**32 (偏空/观望)**
     // - 得分：38/100
-    const mainScorePattern = /得分[:：]?(\d{1,3})(?:\.\d+)?/
+    const mainScorePattern = /得分[:：]?(\d{1,3})(?:\/\d{1,3}|\.\d+)?/
     const mainMatch = sanitizedContent.match(mainScorePattern)
     if (mainMatch) {
       const score = Number.parseFloat(mainMatch[1])
@@ -2600,7 +2600,7 @@ FORMATTED OUTPUT (格式化输出规范):
     }
 
     // Pattern 2: 备选格式 - 英文 "Score: XX"
-    const englishScorePattern = /Score[:：]?(\d{1,3})(?:\.\d+)?/i
+    const englishScorePattern = /Score[:：]?(\d{1,3})(?:\/\d{1,3}|\.\d+)?/i
     const englishMatch = sanitizedContent.match(englishScorePattern)
     if (englishMatch) {
       const score = Number.parseFloat(englishMatch[1])
@@ -2610,7 +2610,7 @@ FORMATTED OUTPUT (格式化输出规范):
     }
 
     // Pattern 3: 其他中文变体 "分数：XX"
-    const otherChinesePattern = /分数[:：]?(\d{1,3})(?:\.\d+)?/
+    const otherChinesePattern = /分数[:：]?(\d{1,3})(?:\/\d{1,3}|\.\d+)?/
     const otherChineseMatch = sanitizedContent.match(otherChinesePattern)
     if (otherChineseMatch) {
       const score = Number.parseFloat(otherChineseMatch[1])

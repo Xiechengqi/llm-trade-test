@@ -153,6 +153,7 @@ interface CandlestickChartProps {
   markedCandleTime: number | null
   onMarkedCandleTimeChange?: (time: number | null) => void
   onIndicatorsChange?: (indicators: IndicatorConfig[]) => void
+  candleScores?: Map<number, number>
 }
 
 export function CandlestickChart({
@@ -173,6 +174,7 @@ export function CandlestickChart({
   markedCandleTime: externalMarkedCandleTime,
   onMarkedCandleTimeChange,
   onIndicatorsChange,
+  candleScores,
 }: CandlestickChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -793,6 +795,44 @@ export function CandlestickChart({
       }
     })
   }, [data, activeIndicators])
+
+  useEffect(() => {
+    if (!markersPluginRef.current || !candlestickSeriesRef.current || data.length === 0) return
+
+    const markers: SeriesMarker<Time>[] = []
+
+    // Add marked candle marker (if exists)
+    if (externalMarkedCandleTime !== null) {
+      const normalizedTime = normalizeToSeconds(externalMarkedCandleTime)
+      markers.push({
+        time: normalizedTime as Time,
+        position: "aboveBar",
+        color: "#f59e0b",
+        shape: "arrowDown",
+        text: "◆",
+      })
+    }
+
+    if (candleScores) {
+      candleScores.forEach((score, timestamp) => {
+        const normalizedTime = normalizeToSeconds(timestamp)
+        // Find if this candle exists in data
+        const candleExists = data.some((candle) => normalizeToSeconds(candle.time) === normalizedTime)
+
+        if (candleExists) {
+          markers.push({
+            time: normalizedTime as Time,
+            position: "belowBar",
+            color: score >= 70 ? "#10b981" : score >= 40 ? "#f59e0b" : "#ef4444",
+            shape: "circle",
+            text: score.toFixed(0),
+          })
+        }
+      })
+    }
+
+    markersPluginRef.current.setMarkers(markers)
+  }, [externalMarkedCandleTime, data, normalizeToSeconds, candleScores])
 
   const handleAddIndicator = (config: IndicatorConfig) => {
     setActiveIndicators((prev) => [...prev, config])

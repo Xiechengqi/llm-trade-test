@@ -596,6 +596,8 @@ FORMATTED OUTPUT (格式化输出规范):
     prompt: "", // Added prompt to default values
   }
 
+  const [candleScores, setCandleScores] = useState<Map<number, number>>(new Map())
+
   const [provider, setProvider] = useState(DEFAULT_VALUES.provider)
   const [endpoint, setEndpoint] = useState("") // This state seems redundant with baseURL, consider consolidating.
   const [apiKey, setApiKey] = useState(DEFAULT_VALUES.apiKey)
@@ -695,7 +697,7 @@ FORMATTED OUTPUT (格式化输出规范):
   const [zoomedImage, setZoomedImage] = useState<MessageImage | null>(null)
 
   // CHANGE: Initialize K-line chart state from localStorage
-  const [klineLimit, setKlineLimit] = useState(() => {
+  const [limit, setKlineLimit] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("klineLimit")
       return saved ? Number.parseInt(saved) : 100
@@ -719,7 +721,13 @@ FORMATTED OUTPUT (格式化输出规范):
     return "1h"
   })
 
-  const [markedCandleTime, setMarkedCandleTime] = useState<number | null>(null)
+  const [markedCandleTime, setMarkedCandleTime] = useState<number | null>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("markedCandleTime")
+      return saved ? Number.parseInt(saved) : null
+    }
+    return null
+  })
 
   const [klineData, setKlineData] = useState<KlineData[]>([])
   const [isLoadingKline, setIsLoadingKline] = useState(false)
@@ -747,9 +755,9 @@ FORMATTED OUTPUT (格式化输出规范):
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("klineLimit", klineLimit.toString())
+      localStorage.setItem("klineLimit", limit.toString())
     }
-  }, [klineLimit])
+  }, [limit])
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -1063,6 +1071,42 @@ FORMATTED OUTPUT (格式化输出规范):
   // Use a unified endpoint for API calls
   const unifiedEndpoint = baseURL.endsWith("/") ? baseURL.slice(0, -1) : baseURL // Remove trailing slash
 
+  // Helper functions for state management with localStorage persistence
+  const getPersistedState = (key: string, defaultValue: any) => {
+    if (typeof window === "undefined") return defaultValue
+    const saved = localStorage.getItem(key)
+    return saved ? JSON.parse(saved) : defaultValue
+  }
+
+  const setPersistedState = (key: string, value: any) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(key, JSON.stringify(value))
+    }
+  }
+
+  // These are the correct states for kline settings, the redeclared ones were removed.
+  // const [limit, setKlineLimit] = useState(() => getPersistedState("klineLimit", 100)) // Removed, replaced by state at top
+  // const [tradingPair, setTradingPair] = useState(() => getPersistedState("tradingPair", "BTCUSDT")) // Removed, replaced by state at top
+  // const [klineInterval, setKlineInterval] = useState(() => getPersistedState("klineInterval", "1h")) // Removed, replaced by state at top
+  // const [markedCandleTime, setMarkedCandleTime] = useState<number | null>(() => getPersistedState("markedCandleTime", null)) // Removed, replaced by state at top
+
+  // Effect to save state changes to localStorage
+  useEffect(() => {
+    setPersistedState("klineLimit", limit)
+  }, [limit])
+  useEffect(() => {
+    setPersistedState("tradingPair", tradingPair)
+  }, [tradingPair])
+  useEffect(() => {
+    setPersistedState("klineInterval", klineInterval)
+  }, [klineInterval])
+  useEffect(() => {
+    setPersistedState("klineEndTime", klineEndTime)
+  }, [klineEndTime])
+  useEffect(() => {
+    setPersistedState("markedCandleTime", markedCandleTime)
+  }, [markedCandleTime])
+
   const fetchKlineData = useCallback(
     async (pair: string, interval: string, limit: number, endTime?: number): Promise<KlineData[]> => {
       setIsLoadingKline(true)
@@ -1279,9 +1323,10 @@ FORMATTED OUTPUT (格式化输出规范):
     [toast],
   )
 
+  // Use refs for current values of tradingPair, klineInterval, klineLimit, klineEndTime
   const tradingPairRef = useRef(tradingPair)
   const klineIntervalRef = useRef(klineInterval)
-  const klineLimitRef = useRef(klineLimit)
+  const klineLimitRef = useRef(limit)
   const klineEndTimeRef = useRef(klineEndTime)
 
   useEffect(() => {
@@ -1293,8 +1338,8 @@ FORMATTED OUTPUT (格式化输出规范):
   }, [klineInterval])
 
   useEffect(() => {
-    klineLimitRef.current = klineLimit
-  }, [klineLimit])
+    klineLimitRef.current = limit
+  }, [limit])
 
   useEffect(() => {
     klineEndTimeRef.current = klineEndTime
@@ -1315,6 +1360,21 @@ FORMATTED OUTPUT (格式化输出规范):
     return await fetchKlineData(currentPair, currentInterval, currentLimit, currentEndTime)
   }, [fetchKlineData])
 
+  // Handler for time point change
+  const handleTimePointChange = (newEndTime: number | undefined) => {
+    setKlineEndTime(newEndTime)
+  }
+
+  // Handler for limit change
+  const handleLimitChange = (newLimit: number) => {
+    setKlineLimit(newLimit)
+  }
+
+  // Handler for indicators change
+  const handleIndicatorsChange = (newIndicators: IndicatorConfig[]) => {
+    setContextIndicators(newIndicators)
+  }
+
   // CHANGE: Separated useEffects for localStorage and other effects
   useEffect(() => {
     console.log("[v0] K-line chart settings effect triggered")
@@ -1322,28 +1382,28 @@ FORMATTED OUTPUT (格式化输出规范):
     if (typeof window !== "undefined") {
       localStorage.setItem("tradingPair", tradingPair)
       localStorage.setItem("klineInterval", klineInterval)
-      localStorage.setItem("klineLimit", klineLimit.toString())
+      localStorage.setItem("klineLimit", limit.toString())
       if (klineEndTime !== undefined) {
         localStorage.setItem("klineEndTime", klineEndTime.toString())
       } else {
         localStorage.removeItem("klineEndTime")
       }
     }
-  }, [tradingPair, klineInterval, klineLimit, klineEndTime])
+  }, [tradingPair, klineInterval, limit, klineEndTime])
 
   // Main fetch effect - trigger on any dependency change
   useEffect(() => {
     console.log("[v0] K-line data fetch effect triggered:", {
       tradingPair,
       klineInterval,
-      klineLimit,
+      limit,
       klineEndTime,
     })
 
     if (tradingPair && klineInterval) {
-      fetchKlineData(tradingPair, klineInterval, klineLimit, klineEndTime)
+      fetchKlineData(tradingPair, klineInterval, limit, klineEndTime)
     }
-  }, [tradingPair, klineInterval, klineLimit, klineEndTime, fetchKlineData])
+  }, [tradingPair, klineInterval, limit, klineEndTime, fetchKlineData])
 
   // Format timestamp to UTC+8 ISO 8601 format (2025-12-23T07:15:00+08:00)
   const formatTimeToUTC8 = useCallback((timestamp: number): string => {
@@ -1866,7 +1926,7 @@ FORMATTED OUTPUT (格式化输出规范):
       showImageUrlInput,
       isAddingImageUrl,
       // CHANGE: Add klineLimit and klineEndTime to settings
-      klineLimit,
+      limit,
       klineEndTime, // Added klineEndTime to settings
       // Add markdown parsing state to settings
       parseResponseMarkdown,
@@ -1915,7 +1975,7 @@ FORMATTED OUTPUT (格式化输出规范):
     imageUrl,
     showImageUrlInput,
     isAddingImageUrl,
-    klineLimit, // CHANGE: Added klineLimit dependency
+    limit, // CHANGE: Added klineLimit dependency
     klineEndTime, // Added klineEndTime dependency
     parseResponseMarkdown, // Added parseResponseMarkdown dependency
     markedCandleTime, // Added markedCandleTime dependency
@@ -2487,6 +2547,47 @@ FORMATTED OUTPUT (格式化输出规范):
     }
   }, [provider])
 
+  const parseScoreFromResponse = (responseContent: string): number | null => {
+    if (!responseContent) return null
+
+    // Pattern 1: 主要格式 - "得分：XX" (系统提示词定义的标准格式)
+    // 匹配多种变体：
+    // - 得分：32
+    // - 得分：**32**
+    // - 得分：**32 (偏空/观望)**
+    // - 得分：38/100
+    const mainScorePattern = /得分[:：]\s*(?:\*\*)?\s*(\d{1,3})(?:\.\d+)?/
+    const mainMatch = responseContent.match(mainScorePattern)
+    if (mainMatch) {
+      const score = Number.parseFloat(mainMatch[1])
+      if (!isNaN(score) && score >= 0 && score <= 100) {
+        return score
+      }
+    }
+
+    // Pattern 2: 备选格式 - 英文 "Score: XX"
+    const englishScorePattern = /Score[:：]\s*(?:\*\*)?\s*(\d{1,3})(?:\.\d+)?/i
+    const englishMatch = responseContent.match(englishScorePattern)
+    if (englishMatch) {
+      const score = Number.parseFloat(englishMatch[1])
+      if (!isNaN(score) && score >= 0 && score <= 100) {
+        return score
+      }
+    }
+
+    // Pattern 3: 其他中文变体 "分数：XX"
+    const otherChinesePattern = /分数[:：]\s*(?:\*\*)?\s*(\d{1,3})(?:\.\d+)?/
+    const otherChineseMatch = responseContent.match(otherChinesePattern)
+    if (otherChineseMatch) {
+      const score = Number.parseFloat(otherChineseMatch[1])
+      if (!isNaN(score) && score >= 0 && score <= 100) {
+        return score
+      }
+    }
+
+    return null
+  }
+
   const handleTest = async (messageOverride?: string, contextOverride?: string) => {
     // if (loading) return // Prevent multiple simultaneous tests
     console.log("[v0] handleTest called, loading:", loading)
@@ -2946,6 +3047,32 @@ FORMATTED OUTPUT (格式化输出规范):
           .catch((error) => {
             console.error("[v0] Failed to save response images to IndexedDB:", error)
           })
+      }
+
+      // Parse and save score
+      let candleTimeToAssociate = markedCandleTime
+
+      // If no candle is marked, automatically use the latest (last) candle
+      if (!candleTimeToAssociate && klineData.length > 0) {
+        const latestCandle = klineData[klineData.length - 1]
+        candleTimeToAssociate = latestCandle.time
+        console.log(`[v0] No candle marked, automatically using latest candle: ${new Date(candleTimeToAssociate).toLocaleString()}`)
+      }
+
+      if (responseContent && candleTimeToAssociate) {
+        const parsedScore = parseScoreFromResponse(responseContent)
+        if (parsedScore !== null) {
+          console.log(`[v0] Parsed score ${parsedScore} for candle at time ${candleTimeToAssociate}`)
+          setCandleScores((prev) => {
+            const newScores = new Map(prev)
+            newScores.set(candleTimeToAssociate, parsedScore)
+            return newScores
+          })
+        } else {
+          console.log(`[v0] Failed to parse score from response. candleTimeToAssociate: ${candleTimeToAssociate}`)
+        }
+      } else if (responseContent && !candleTimeToAssociate) {
+        console.log(`[v0] Score parsing skipped: No candle marked and no klineData available.`)
       }
 
       setHistory((prev) => {
@@ -4577,6 +4704,11 @@ FORMATTED OUTPUT (格式化输出规范):
     }
   }, [autoReloadImages, messageImages])
 
+  const handleSendRequest = async () => {
+    // Reuse handleTest logic for sending requests
+    await handleTest()
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Toaster />
@@ -5112,14 +5244,15 @@ FORMATTED OUTPUT (格式化输出规范):
               onIntervalChange={setKlineInterval}
               popularPairs={popularPairs}
               intervals={intervals}
-              onTimePointChange={setKlineEndTime}
+              onTimePointChange={handleTimePointChange}
               endTime={klineEndTime}
-              limit={klineLimit}
-              onLimitChange={setKlineLimit}
-              onForceReload={forceReloadKlineData}
+              limit={limit}
+              onLimitChange={handleLimitChange}
+              onForceReload={fetchKlineData}
               markedCandleTime={markedCandleTime}
               onMarkedCandleTimeChange={setMarkedCandleTime}
-              onIndicatorsChange={setContextIndicators}
+              onIndicatorsChange={handleIndicatorsChange}
+              candleScores={candleScores}
             />
           </CardContent>
         </Card>
@@ -5543,115 +5676,115 @@ FORMATTED OUTPUT (格式化输出规范):
                         <FileText className="h-3.5 w-3.5" />
                         从外部加载系统提示词
                       </Label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="enableSystemPromptFile"
-                        checked={enableSystemPromptFile}
-                        onChange={(e) => setEnableSystemPromptFile(e.target.checked)}
-                        className="h-4 w-4 rounded border-input bg-background accent-primary cursor-pointer"
-                      />
-                      <Label htmlFor="enableSystemPromptFile" className="cursor-pointer font-normal text-sm">
-                        启用
-                      </Label>
-                      <input
-                        type="checkbox"
-                        id="autoReloadSystemPrompt"
-                        checked={autoReloadSystemPrompt}
-                        onChange={(e) => setAutoReloadSystemPrompt(e.target.checked)}
-                        disabled={!enableSystemPromptFile}
-                        className="h-4 w-4 rounded border-input bg-background accent-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                      <Label htmlFor="autoReloadSystemPrompt" className="cursor-pointer font-normal text-sm">
-                        自动重载
-                      </Label>
-                    </div>
-                  </div>
-                  {enableSystemPromptFile && (
-                    <>
-                      <div className="flex gap-2">
-                        <Input
-                          id="systemPromptFilePath"
-                          value={systemPromptFilePath}
-                          onChange={(e) => {
-                            setSystemPromptFilePath(e.target.value)
-                            setIsSystemPromptFromLocalFile(false)
-                            systemPromptFileHandleRef.current = null
-                            setLoadedSystemPromptContent("")
-                          }}
-                          placeholder="https://example.com/system-prompt.txt 或点击选择本地文件"
-                          className="text-sm flex-1"
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="enableSystemPromptFile"
+                          checked={enableSystemPromptFile}
+                          onChange={(e) => setEnableSystemPromptFile(e.target.checked)}
+                          className="h-4 w-4 rounded border-input bg-background accent-primary cursor-pointer"
                         />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleLocalFileSelect("systemPrompt")}
-                          className="shrink-0"
-                        >
-                          <Upload className="h-4 w-4 mr-1" />
-                          选择文件
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        支持 HTTP/HTTPS 链接或本地文件。点击"选择文件"按钮可直接选择本地 .txt 或 .md 文件。
-                      </p>
-                    </>
-                  )}
-
-                  {enableSystemPromptFile && loadedSystemPromptContent && (
-                    <div className="space-y-1.5 pt-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                          外部加载的系统提示词预览
-                          {isSystemPromptFromLocalFile && (
-                            <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px]">
-                              本地文件
-                            </span>
-                          )}
+                        <Label htmlFor="enableSystemPromptFile" className="cursor-pointer font-normal text-sm">
+                          启用
                         </Label>
-                        <div className="flex items-center gap-1">
-                          {isSystemPromptFromLocalFile && systemPromptFileHandleRef.current && (
+                        <input
+                          type="checkbox"
+                          id="autoReloadSystemPrompt"
+                          checked={autoReloadSystemPrompt}
+                          onChange={(e) => setAutoReloadSystemPrompt(e.target.checked)}
+                          disabled={!enableSystemPromptFile}
+                          className="h-4 w-4 rounded border-input bg-background accent-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                        <Label htmlFor="autoReloadSystemPrompt" className="cursor-pointer font-normal text-sm">
+                          自动重载
+                        </Label>
+                      </div>
+                    </div>
+                    {enableSystemPromptFile && (
+                      <>
+                        <div className="flex gap-2">
+                          <Input
+                            id="systemPromptFilePath"
+                            value={systemPromptFilePath}
+                            onChange={(e) => {
+                              setSystemPromptFilePath(e.target.value)
+                              setIsSystemPromptFromLocalFile(false)
+                              systemPromptFileHandleRef.current = null
+                              setLoadedSystemPromptContent("")
+                            }}
+                            placeholder="https://example.com/system-prompt.txt 或点击选择本地文件"
+                            className="text-sm flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleLocalFileSelect("systemPrompt")}
+                            className="shrink-0"
+                          >
+                            <Upload className="h-4 w-4 mr-1" />
+                            选择文件
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          支持 HTTP/HTTPS 链接或本地文件。点击"选择文件"按钮可直接选择本地 .txt 或 .md 文件。
+                        </p>
+                      </>
+                    )}
+
+                    {enableSystemPromptFile && loadedSystemPromptContent && (
+                      <div className="space-y-1.5 pt-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            外部加载的系统提示词预览
+                            {isSystemPromptFromLocalFile && (
+                              <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px]">
+                                本地文件
+                              </span>
+                            )}
+                          </Label>
+                          <div className="flex items-center gap-1">
+                            {isSystemPromptFromLocalFile && systemPromptFileHandleRef.current && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => reloadLocalFile("systemPrompt")}
+                                title="重新加载文件"
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => reloadLocalFile("systemPrompt")}
-                              title="重新加载文件"
+                              onClick={() => setIsExternalSystemPromptExpanded(!isExternalSystemPromptExpanded)}
                             >
-                              <RotateCcw className="h-4 w-4" />
+                              {isExternalSystemPromptExpanded ? (
+                                <>
+                                  <ChevronUp className="mr-1 h-4 w-4" />
+                                  收起
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="mr-1 h-4 w-4" />
+                                  展开
+                                </>
+                              )}
                             </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setIsExternalSystemPromptExpanded(!isExternalSystemPromptExpanded)}
-                          >
-                            {isExternalSystemPromptExpanded ? (
-                              <>
-                                <ChevronUp className="mr-1 h-4 w-4" />
-                                收起
-                              </>
-                            ) : (
-                              <>
-                                <ChevronDown className="mr-1 h-4 w-4" />
-                                展开
-                              </>
-                            )}
-                          </Button>
+                          </div>
                         </div>
+                        <Textarea
+                          value={loadedSystemPromptContent}
+                          readOnly
+                          className={`bg-muted/50 text-sm font-mono cursor-default overflow-y-auto transition-all duration-200 ${
+                            isExternalSystemPromptExpanded ? "h-60" : "h-20"
+                          }`}
+                        />
                       </div>
-                      <Textarea
-                        value={loadedSystemPromptContent}
-                        readOnly
-                        className={`bg-muted/50 text-sm font-mono cursor-default overflow-y-auto transition-all duration-200 ${
-                          isExternalSystemPromptExpanded ? "h-60" : "h-20"
-                        }`}
-                      />
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

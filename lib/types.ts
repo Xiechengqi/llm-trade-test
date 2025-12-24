@@ -6,3 +6,8 @@ export interface KlineData {
   close: number
   volume: number
 }
+
+export interface CandleScore {
+  time: number // timestamp
+  score: number // parsed score value
+}

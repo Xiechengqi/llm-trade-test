@@ -518,9 +518,6 @@ const formatRequestContentForDisplay = (requestContent: string): string => {
   }
 }
 
-// Special marker for candle scores that should always follow the latest candle
-const LATEST_CANDLE_MARKER = -1
-
 export default function Home() {
   // CHANGE: Renamed component from LLMAPITester to Home
   const DEFAULT_VALUES = {
@@ -600,9 +597,10 @@ FORMATTED OUTPUT (格式化输出规范):
     prompt: "", // Added prompt to default values
   }
 
-  const [candleScores, setCandleScores] = useState<Map<number, number>>(() => {
+  // Fixed scores: bound to specific candle timestamps (when user clicks a candle)
+  const [fixedCandleScores, setFixedCandleScores] = useState<Map<number, number>>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("candleScores")
+      const saved = localStorage.getItem("fixedCandleScores")
       if (saved) {
         try {
           const obj = JSON.parse(saved)
@@ -614,6 +612,30 @@ FORMATTED OUTPUT (格式化输出规范):
     }
     return new Map()
   })
+
+  // Follow-latest score: bound to the latest candle when no candle is selected
+  const [followLatestScore, setFollowLatestScore] = useState<{ score: number; timestamp: number } | null>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("followLatestScore")
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch {
+          return null
+        }
+      }
+    }
+    return null
+  })
+
+  // Combined scores for display (fixed + follow-latest mapped to -1 for chart rendering)
+  const candleScores = useMemo(() => {
+    const combined = new Map<number, number>(fixedCandleScores)
+    if (followLatestScore !== null) {
+      combined.set(-1, followLatestScore.score) // Use -1 as marker for follow-latest
+    }
+    return combined
+  }, [fixedCandleScores, followLatestScore])
 
   const [provider, setProvider] = useState(DEFAULT_VALUES.provider)
   const [endpoint, setEndpoint] = useState("") // This state seems redundant with baseURL, consider consolidating.
@@ -788,17 +810,28 @@ FORMATTED OUTPUT (格式化输出规范):
     }
   }, [klineEndTime])
 
-  // Save candleScores to localStorage
+  // Save fixedCandleScores to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      if (candleScores.size > 0) {
-        const obj = Object.fromEntries(candleScores)
-        localStorage.setItem("candleScores", JSON.stringify(obj))
+      if (fixedCandleScores.size > 0) {
+        const obj = Object.fromEntries(fixedCandleScores)
+        localStorage.setItem("fixedCandleScores", JSON.stringify(obj))
       } else {
-        localStorage.removeItem("candleScores")
+        localStorage.removeItem("fixedCandleScores")
       }
     }
-  }, [candleScores])
+  }, [fixedCandleScores])
+
+  // Save followLatestScore to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (followLatestScore !== null) {
+        localStorage.setItem("followLatestScore", JSON.stringify(followLatestScore))
+      } else {
+        localStorage.removeItem("followLatestScore")
+      }
+    }
+  }, [followLatestScore])
 
   // Popular trading pairs for quick selection - organized by category
   const popularPairs = [
@@ -3241,32 +3274,31 @@ FORMATTED OUTPUT (格式化输出规范):
       }
 
       // Parse and save score
-      let candleTimeToAssociate = markedCandleTime
-
-      // If no candle is marked, use a special marker that always follows the latest candle
-      if (!candleTimeToAssociate && klineData.length > 0) {
-        candleTimeToAssociate = LATEST_CANDLE_MARKER
-        console.log(`[v0] No candle marked, using dynamic latest marker (will always follow the newest candle)`)
-      }
-
-      if (responseContent && candleTimeToAssociate) {
+      if (responseContent && klineData.length > 0) {
         const parsedScore = parseScoreFromResponse(responseContent)
         if (parsedScore !== null) {
-          const displayTime = candleTimeToAssociate === LATEST_CANDLE_MARKER
-            ? "latest (dynamic)"
-            : new Date(candleTimeToAssociate).toLocaleString()
-          console.log(`[v0] Parsed score ${parsedScore} for candle at time ${displayTime}`)
-          setCandleScores((prev) => {
-            const newScores = new Map(prev)
-            newScores.set(candleTimeToAssociate, parsedScore)
-            return newScores
-          })
+          // Check if a candle is marked
+          if (markedCandleTime !== null) {
+            // User clicked a candle: save as fixed score
+            console.log(`[v0] Parsed score ${parsedScore} for marked candle at ${new Date(markedCandleTime).toLocaleString()}`)
+            setFixedCandleScores((prev) => {
+              const newScores = new Map(prev)
+              newScores.set(markedCandleTime, parsedScore)
+              return newScores
+            })
+          } else {
+            // No candle marked: save as follow-latest score
+            const latestCandle = klineData[klineData.length - 1]
+            console.log(`[v0] Parsed score ${parsedScore} for latest candle (will follow newest candle)`)
+            setFollowLatestScore({ score: parsedScore, timestamp: latestCandle.time })
+          }
+
           if (parsedScore >= 70 && ntfyTopics.trim()) {
             const summaryText = extractSummaryAfterScore(responseContent)
             // For notification, use the actual latest candle time
-            const notificationCandleTime = candleTimeToAssociate === LATEST_CANDLE_MARKER && klineData.length > 0
-              ? klineData[klineData.length - 1].time
-              : candleTimeToAssociate
+            const notificationCandleTime = markedCandleTime !== null
+              ? markedCandleTime
+              : klineData[klineData.length - 1].time
             void sendNtfyNotification({
               score: parsedScore,
               candleTime: notificationCandleTime,
@@ -3274,10 +3306,10 @@ FORMATTED OUTPUT (格式化输出规范):
             })
           }
         } else {
-          console.log(`[v0] Failed to parse score from response. candleTimeToAssociate: ${candleTimeToAssociate}`)
+          console.log(`[v0] Failed to parse score from response.`)
         }
-      } else if (responseContent && !candleTimeToAssociate) {
-        console.log(`[v0] Score parsing skipped: No candle marked and no klineData available.`)
+      } else if (responseContent && klineData.length === 0) {
+        console.log(`[v0] Score parsing skipped: No klineData available.`)
       }
 
       setHistory((prev) => {
@@ -3646,7 +3678,8 @@ FORMATTED OUTPUT (格式化输出规范):
   }
 
   const handleClearAllScores = () => {
-    setCandleScores(new Map())
+    setFixedCandleScores(new Map())
+    setFollowLatestScore(null)
     toast({
       title: "看多评分已清空",
       description: "所有蜡烛看多评分标记已被删除",
@@ -5493,9 +5526,10 @@ FORMATTED OUTPUT (格式化输出规范):
                     .map(([time, score]) => {
                       const scoreColor = score >= 70 ? "text-green-600" : score >= 40 ? "text-orange-600" : "text-red-600"
                       const scoreBg = score >= 70 ? "bg-green-50 dark:bg-green-950/30" : score >= 40 ? "bg-orange-50 dark:bg-orange-950/30" : "bg-red-50 dark:bg-red-950/30"
-                      // Handle special marker for dynamic latest candle
-                      const displayTime = time === LATEST_CANDLE_MARKER
-                        ? "最新蜡烛 (动态)"
+                      // Handle special marker for follow-latest score
+                      const isFollowLatest = time === -1
+                      const displayTime = isFollowLatest
+                        ? `最新蜡烛 (动态) - ${followLatestScore ? new Date(followLatestScore.timestamp).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-') : ''}`
                         : new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')
                       return (
                         <div
@@ -5504,6 +5538,7 @@ FORMATTED OUTPUT (格式化输出规范):
                         >
                           <span className={scoreColor}>●</span>
                           <span className="text-muted-foreground font-mono">{displayTime}</span>
+                          {isFollowLatest && <span className="text-xs text-blue-500">↗</span>}
                           <span className={`font-medium ${scoreColor}`}>{score}</span>
                         </div>
                       )

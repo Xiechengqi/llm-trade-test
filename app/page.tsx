@@ -524,6 +524,7 @@ export default function Home() {
     provider: "openrouter" as const,
     model: "",
     apiKey: "", // Added default for apiKey
+    ntfyTopics: "",
     baseURL: "https://openrouter.ai",
     apiPath: "/api/v1/chat/completions",
     systemPrompt: `Role: 你是一位精通价格行为（Price Action）与量化分析的加密货币首席分析师。你擅长从原始 OHLCV 数据中剥离噪音,识别趋势拐点及高盈亏比的交易机会。
@@ -614,6 +615,7 @@ FORMATTED OUTPUT (格式化输出规范):
   const [provider, setProvider] = useState(DEFAULT_VALUES.provider)
   const [endpoint, setEndpoint] = useState("") // This state seems redundant with baseURL, consider consolidating.
   const [apiKey, setApiKey] = useState(DEFAULT_VALUES.apiKey)
+  const [ntfyTopics, setNtfyTopics] = useState(DEFAULT_VALUES.ntfyTopics)
   const [showApiKey, setShowApiKey] = useState(false)
   const [isPromptExpanded, setIsPromptExpanded] = useState(false)
   const [isContextExpanded, setIsContextExpanded] = useState(false)
@@ -1811,6 +1813,7 @@ FORMATTED OUTPUT (格式化输出规范):
           if (settings.provider) setProvider(settings.provider)
           if (settings.model) setModel(settings.model)
           if (settings.apiKey) setApiKey(settings.apiKey)
+          if (settings.ntfyTopics !== undefined) setNtfyTopics(settings.ntfyTopics)
           if (settings.baseURL) setBaseURL(settings.baseURL)
           if (settings.apiPath) setApiPath(settings.apiPath)
           if (settings.systemPrompt !== undefined) setSystemPrompt(settings.systemPrompt)
@@ -1912,6 +1915,7 @@ FORMATTED OUTPUT (格式化输出规范):
       provider,
       model,
       apiKey,
+      ntfyTopics,
       baseURL,
       apiPath,
       systemPrompt,
@@ -1963,6 +1967,7 @@ FORMATTED OUTPUT (格式化输出规范):
     provider,
     model,
     apiKey,
+    ntfyTopics,
     baseURL,
     apiPath,
     systemPrompt,
@@ -2613,6 +2618,106 @@ FORMATTED OUTPUT (格式化输出规范):
     return null
   }
 
+  const extractSummaryAfterScore = (responseContent: string): string => {
+    if (!responseContent) return ""
+
+    const normalized = responseContent.replace(/\r/g, "")
+    const scoreLinePattern = /(得分[:：].*)/i
+    const match = normalized.match(scoreLinePattern)
+    let contentAfterScore = ""
+
+    if (match && typeof match.index === "number") {
+      contentAfterScore = normalized.slice(match.index + match[0].length).trim()
+    }
+
+    const baseContent = contentAfterScore || normalized.trim()
+    if (!baseContent) {
+      return ""
+    }
+
+    const segments = baseContent
+      .split(/\n{2,}/)
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+
+    let summary = segments.length > 0 ? segments[0] : baseContent
+    if (summary.length > 200) {
+      summary = `${summary.slice(0, 200)}...`
+    }
+
+    return summary
+  }
+
+  const sendNtfyNotification = useCallback(
+    async ({
+      score,
+      candleTime,
+      summary,
+    }: {
+      score: number
+      candleTime: number
+      summary: string
+    }) => {
+      const topics = Array.from(
+        new Set(
+          ntfyTopics
+            .split(/[,，\s]+/)
+            .map((t) => t.trim())
+            .filter(Boolean),
+        ),
+      )
+
+      if (topics.length === 0) {
+        return
+      }
+
+      const formattedTime = new Date(candleTime)
+        .toLocaleString("zh-CN", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        })
+        .replace(/\//g, "-")
+
+      const messageBody = [
+        `交易对：${tradingPair || "-"}`,
+        `蜡烛时间：${formattedTime}`,
+        `看多评分：${score}`,
+        `摘要：${summary || "暂无概括"}`,
+      ].join("\n")
+
+      const title = `Kline score >=70 - ${tradingPair || "N/A"}`
+      const priority = score >= 90 ? "high" : "default"
+
+      await Promise.all(
+        topics.map(async (topic) => {
+          try {
+            const response = await fetch(`https://ntfy.sh/${topic}`, {
+              method: "POST",
+              headers: {
+                "X-Title": title,
+                "X-Tags": "trade,kline,long",
+                "X-Priority": priority,
+              },
+              body: messageBody,
+            })
+
+            if (!response.ok) {
+              console.warn(`[v0] ntfy 通知发送失败 (${topic}): ${response.status} ${response.statusText}`)
+            }
+          } catch (err) {
+            console.warn(`[v0] ntfy 通知异常 (${topic}):`, err)
+          }
+        }),
+      )
+    },
+    [ntfyTopics, tradingPair],
+  )
+
   const handleTest = async (messageOverride?: string, contextOverride?: string) => {
     // if (loading) return // Prevent multiple simultaneous tests
     console.log("[v0] handleTest called, loading:", loading)
@@ -3101,6 +3206,14 @@ FORMATTED OUTPUT (格式化输出规范):
             newScores.set(candleTimeToAssociate, parsedScore)
             return newScores
           })
+          if (parsedScore >= 70 && ntfyTopics.trim()) {
+            const summaryText = extractSummaryAfterScore(responseContent)
+            void sendNtfyNotification({
+              score: parsedScore,
+              candleTime: candleTimeToAssociate,
+              summary: summaryText,
+            })
+          }
         } else {
           console.log(`[v0] Failed to parse score from response. candleTimeToAssociate: ${candleTimeToAssociate}`)
         }
@@ -3366,6 +3479,7 @@ FORMATTED OUTPUT (格式化输出规范):
     setBaseURL(DEFAULT_VALUES.baseURL)
     setApiPath(DEFAULT_VALUES.apiPath)
     setApiKey("")
+    setNtfyTopics(DEFAULT_VALUES.ntfyTopics)
     setModel("")
     setError("")
     setShowApiKey(false) // Reset API Key visibility
@@ -4943,23 +5057,32 @@ FORMATTED OUTPUT (格式化输出规范):
               />
             )}
 
-            <div className="relative flex items-center">
+            <div className="flex flex-col gap-1">
+              <div className="relative flex items-center">
+                <Input
+                  type={showApiKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="API Key"
+                  className="w-[200px] pr-10"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-0 h-full px-3 hover:bg-transparent"
+                  title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                >
+                  {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </Button>
+              </div>
+            </div>
+            <div className="w-[240px]">
               <Input
-                type={showApiKey ? "text" : "password"}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="API Key"
-                className="w-[200px] pr-10"
+                value={ntfyTopics}
+                onChange={(e) => setNtfyTopics(e.target.value)}
+                placeholder="ntfy.sh通知topic"
               />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-0 h-full px-3 hover:bg-transparent"
-                title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
-              >
-                {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </Button>
             </div>
             <Button variant="outline" size="sm" onClick={handleReset}>
               <RotateCcw className="mr-2 size-4" />

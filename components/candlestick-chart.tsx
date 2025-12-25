@@ -35,9 +35,6 @@ import {
 } from "@/lib/indicators"
 import type { KlineData } from "@/lib/types"
 
-// Special marker for candle scores that should always follow the latest candle
-const LATEST_CANDLE_MARKER = -1
-
 type MarketType = "crypto" | "stock"
 
 // Default crypto pairs fallback
@@ -462,6 +459,23 @@ export function CandlestickChart({
     }
   }, [selectedTime])
 
+  // Sync selectedDate and selectedTime to parent component's endTime
+  useEffect(() => {
+    if (selectedDate && selectedTime) {
+      // Convert selected date and time to timestamp
+      const dateTimeString = `${selectedDate}T${selectedTime}`
+      const timestamp = new Date(dateTimeString).getTime()
+      if (!isNaN(timestamp) && onTimePointChange) {
+        onTimePointChange(timestamp)
+      }
+    } else if (!selectedDate && !selectedTime) {
+      // Clear endTime when both date and time are empty
+      if (onTimePointChange) {
+        onTimePointChange(undefined)
+      }
+    }
+  }, [selectedDate, selectedTime, onTimePointChange])
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       if (markedCandleTime !== null) {
@@ -795,33 +809,19 @@ export function CandlestickChart({
 
     if (candleScores && candleScores.size > 0) {
       candleScores.forEach((score, timestamp) => {
-        let markerTime: number
+        const markerTime = normalizeToSeconds(timestamp)
+        // Find if this candle exists in data
+        const candleExists = data.some((candle) => normalizeToSeconds(candle.time) === markerTime)
 
-        // Handle special marker that follows the latest candle
-        if (timestamp === LATEST_CANDLE_MARKER) {
-          // Use the last candle in current data
-          const latestCandle = data[data.length - 1]
-          if (latestCandle) {
-            markerTime = normalizeToSeconds(latestCandle.time)
-          } else {
-            return // No data, skip this marker
-          }
-        } else {
-          markerTime = normalizeToSeconds(timestamp)
-          // Find if this candle exists in data
-          const candleExists = data.some((candle) => normalizeToSeconds(candle.time) === markerTime)
-          if (!candleExists) {
-            return // Candle not in current data, skip this marker
-          }
+        if (candleExists) {
+          markers.push({
+            time: markerTime as Time,
+            position: "belowBar",
+            color: score >= 70 ? "#10b981" : score >= 40 ? "#f59e0b" : "#ef4444",
+            shape: "circle",
+            text: score.toFixed(0),
+          })
         }
-
-        markers.push({
-          time: markerTime as Time,
-          position: "belowBar",
-          color: score >= 70 ? "#10b981" : score >= 40 ? "#f59e0b" : "#ef4444",
-          shape: "circle",
-          text: score.toFixed(0),
-        })
       })
     }
 
@@ -1160,6 +1160,10 @@ export function CandlestickChart({
               setSelectedTime("")
               localStorage.removeItem("klineSelectedDate")
               localStorage.removeItem("klineSelectedTime")
+              // Clear parent component's endTime
+              if (onTimePointChange) {
+                onTimePointChange(undefined)
+              }
             }}
             className="h-9 px-3 bg-transparent"
             title="清除日期时间"

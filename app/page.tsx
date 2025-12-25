@@ -486,6 +486,79 @@ const loadResponseImagesForHistory = async (historyItems: HistoryItem[]) => {
   return imagesMap
 }
 
+// Extract latest candle timestamp from request content
+const extractLatestCandleTimeFromRequest = (requestContent: string): number | null => {
+  try {
+    const messages = JSON.parse(requestContent)
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return null
+    }
+
+    // Find the user message with K-line context
+    for (const message of messages) {
+      if (message.role === "user" && message.content) {
+        let textContent = ""
+
+        if (typeof message.content === "string") {
+          textContent = message.content
+        } else if (Array.isArray(message.content)) {
+          // Multimodal content - find text part
+          const textPart = message.content.find((part: any) => part.type === "text")
+          if (textPart && textPart.text) {
+            textContent = textPart.text
+          }
+        }
+
+        if (!textContent) continue
+
+        // Split by newlines and find the JSON part
+        const lines = textContent.split("\n\n")
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line.trim())
+            if (parsed.klineData && Array.isArray(parsed.klineData) && parsed.klineData.length > 0) {
+              // Found K-line data, get the latest candle
+              const latestCandle = parsed.klineData[parsed.klineData.length - 1]
+              if (latestCandle.time) {
+                const dateString = latestCandle.time
+
+                // Try ISO 8601 format first: "2025-12-23T07:15:00+08:00"
+                const iso8601Match = dateString.match(
+                  /(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})([+-]\d{2}:\d{2})?/,
+                )
+                if (iso8601Match) {
+                  // Parse as ISO 8601, which handles timezone automatically
+                  const timestamp = new Date(dateString).getTime()
+                  if (!isNaN(timestamp)) {
+                    return timestamp
+                  }
+                }
+
+                // Fallback to old format: "2025-12-24 12:00:00" (space-separated, UTC+8)
+                const spaceMatch = dateString.match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/)
+                if (spaceMatch) {
+                  const [, year, month, day, hour, minute, second] = spaceMatch
+                  // Assume UTC+8 and convert to UTC
+                  const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}+08:00`)
+                  const timestamp = date.getTime()
+                  if (!isNaN(timestamp)) {
+                    return timestamp
+                  }
+                }
+              }
+            }
+          } catch {
+            // Not a JSON line, continue
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("[v0] Failed to extract latest candle time from request:", error)
+  }
+  return null
+}
+
 const formatRequestContentForDisplay = (requestContent: string): string => {
   try {
     const parsed = JSON.parse(requestContent)
@@ -613,31 +686,30 @@ FORMATTED OUTPUT (格式化输出规范):
     return new Map()
   })
 
-  // Follow-latest scores: array of scores that follow the latest candle when no candle is selected
-  const [followLatestScores, setFollowLatestScores] = useState<Array<{ score: number; timestamp: number }>>(() => {
+  // Auto scores: scores from timer execution (bound to the candle at execution time)
+  const [autoScores, setAutoScores] = useState<Map<number, number>>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("followLatestScores")
+      const saved = localStorage.getItem("autoScores")
       if (saved) {
         try {
-          return JSON.parse(saved)
+          const obj = JSON.parse(saved)
+          return new Map(Object.entries(obj).map(([k, v]) => [Number(k), v as number]))
         } catch {
-          return []
+          return new Map()
         }
       }
     }
-    return []
+    return new Map()
   })
 
-  // Combined scores for display (fixed + follow-latest mapped to -1 for chart rendering)
+  // Combined scores for display and chart (fixed + auto)
   const candleScores = useMemo(() => {
     const combined = new Map<number, number>(fixedCandleScores)
-    // Add only the latest follow-latest score to the chart (mapped to -1)
-    if (followLatestScores.length > 0) {
-      const latest = followLatestScores[followLatestScores.length - 1]
-      combined.set(-1, latest.score) // Use -1 as marker for follow-latest
-    }
+    autoScores.forEach((score, time) => {
+      combined.set(time, score)
+    })
     return combined
-  }, [fixedCandleScores, followLatestScores])
+  }, [fixedCandleScores, autoScores])
 
   const [provider, setProvider] = useState(DEFAULT_VALUES.provider)
   const [endpoint, setEndpoint] = useState("") // This state seems redundant with baseURL, consider consolidating.
@@ -824,16 +896,17 @@ FORMATTED OUTPUT (格式化输出规范):
     }
   }, [fixedCandleScores])
 
-  // Save followLatestScores to localStorage
+  // Save autoScores to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      if (followLatestScores.length > 0) {
-        localStorage.setItem("followLatestScores", JSON.stringify(followLatestScores))
+      if (autoScores.size > 0) {
+        const obj = Object.fromEntries(autoScores)
+        localStorage.setItem("autoScores", JSON.stringify(obj))
       } else {
-        localStorage.removeItem("followLatestScores")
+        localStorage.removeItem("autoScores")
       }
     }
-  }, [followLatestScores])
+  }, [autoScores])
 
   // Popular trading pairs for quick selection - organized by category
   const popularPairs = [
@@ -3276,7 +3349,7 @@ FORMATTED OUTPUT (格式化输出规范):
       }
 
       // Parse and save score
-      if (responseContent && klineData.length > 0) {
+      if (responseContent) {
         const parsedScore = parseScoreFromResponse(responseContent)
         if (parsedScore !== null) {
           // Check if a candle is marked
@@ -3289,10 +3362,18 @@ FORMATTED OUTPUT (格式化输出规范):
               return newScores
             })
           } else {
-            // No candle marked: save as follow-latest score (append to array)
-            const latestCandle = klineData[klineData.length - 1]
-            console.log(`[v0] Parsed score ${parsedScore} for latest candle (will follow newest candle)`)
-            setFollowLatestScores((prev) => [...prev, { score: parsedScore, timestamp: latestCandle.time }])
+            // No candle marked: extract latest candle time from request content
+            const latestCandleTimeFromRequest = extractLatestCandleTimeFromRequest(requestContent)
+            if (latestCandleTimeFromRequest !== null) {
+              console.log(`[v0] Parsed score ${parsedScore} for latest candle at ${new Date(latestCandleTimeFromRequest).toLocaleString()} (from request content)`)
+              setAutoScores((prev) => {
+                const newScores = new Map(prev)
+                newScores.set(latestCandleTimeFromRequest, parsedScore)
+                return newScores
+              })
+            } else {
+              console.log(`[v0] Could not extract latest candle time from request, skipping score save.`)
+            }
           }
 
           if (parsedScore >= 70 && ntfyTopics.trim()) {
@@ -3300,7 +3381,7 @@ FORMATTED OUTPUT (格式化输出规范):
             // For notification, use the actual latest candle time
             const notificationCandleTime = markedCandleTime !== null
               ? markedCandleTime
-              : klineData[klineData.length - 1].time
+              : extractLatestCandleTimeFromRequest(requestContent) ?? klineData[klineData.length - 1]?.time ?? Date.now()
             void sendNtfyNotification({
               score: parsedScore,
               candleTime: notificationCandleTime,
@@ -3310,8 +3391,6 @@ FORMATTED OUTPUT (格式化输出规范):
         } else {
           console.log(`[v0] Failed to parse score from response.`)
         }
-      } else if (responseContent && klineData.length === 0) {
-        console.log(`[v0] Score parsing skipped: No klineData available.`)
       }
 
       setHistory((prev) => {
@@ -3681,7 +3760,7 @@ FORMATTED OUTPUT (格式化输出规范):
 
   const handleClearAllScores = () => {
     setFixedCandleScores(new Map())
-    setFollowLatestScores([])
+    setAutoScores(new Map())
     toast({
       title: "看多评分已清空",
       description: "所有蜡烛看多评分标记已被删除",
@@ -5509,7 +5588,7 @@ FORMATTED OUTPUT (格式化输出规范):
               <div className="mb-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-muted-foreground">
-                    已标记看多评分 ({fixedCandleScores.size + followLatestScores.length})
+                    已标记看多评分 ({candleScores.size})
                   </div>
                   <Button
                     variant="ghost"
@@ -5522,35 +5601,27 @@ FORMATTED OUTPUT (格式化输出规范):
                   </Button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {[
-                    // Fixed scores
-                    ...Array.from(fixedCandleScores.entries()).map(([time, score]) => ({ time, score, isFollowLatest: false })),
-                    // Follow-latest scores (all historical)
-                    ...followLatestScores.map((item) => ({ time: item.timestamp, score: item.score, isFollowLatest: true })),
-                  ]
-                    .sort((a, b) => b.score - a.score)
+                  {Array.from(candleScores.entries())
+                    .sort(([, a], [, b]) => b - a)
                     .slice(0, 10)
-                    .map(({ time, score, isFollowLatest }) => {
+                    .map(([time, score]) => {
                       const scoreColor = score >= 70 ? "text-green-600" : score >= 40 ? "text-orange-600" : "text-red-600"
                       const scoreBg = score >= 70 ? "bg-green-50 dark:bg-green-950/30" : score >= 40 ? "bg-orange-50 dark:bg-orange-950/30" : "bg-red-50 dark:bg-red-950/30"
-                      const displayTime = isFollowLatest
-                        ? `最新蜡烛 (动态) - ${new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')}`
-                        : new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')
+                      const displayTime = new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')
                       return (
                         <div
-                          key={`${time}-${isFollowLatest}`}
+                          key={time}
                           className={`flex items-center gap-2 text-xs px-2 py-1 rounded-md ${scoreBg}`}
                         >
                           <span className={scoreColor}>●</span>
                           <span className="text-muted-foreground font-mono">{displayTime}</span>
-                          {isFollowLatest && <span className="text-xs text-blue-500">↗</span>}
                           <span className={`font-medium ${scoreColor}`}>{score}</span>
                         </div>
                       )
                     })}
-                  {fixedCandleScores.size + followLatestScores.length > 10 && (
+                  {candleScores.size > 10 && (
                     <div className="text-xs text-muted-foreground px-2 py-1">
-                      还有 {fixedCandleScores.size + followLatestScores.length - 10} 个...
+                      还有 {candleScores.size - 10} 个...
                     </div>
                   )}
                 </div>

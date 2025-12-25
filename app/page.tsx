@@ -792,6 +792,10 @@ FORMATTED OUTPUT (格式化输出规范):
   const timerRef = useRef<NodeJS.Timeout | null>(null) // Use useRef for timer
   const [isTimerRunning, setIsTimerRunning] = useState(false) // Track if timer is active
   const isTimerRunningRef = useRef(false) // Ref to track timer state for immediate access
+  const [isRangeTesting, setIsRangeTesting] = useState(false)
+  const [rangeTestProgress, setRangeTestProgress] = useState<{ current: number; total: number } | null>(null)
+  const rangeTestAbortRef = useRef(false)
+  const activeCandleTimeRef = useRef<number | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const [responseDuration, setResponseDuration] = useState<number | null>(null)
   const [isParametersExpanded, setIsParametersExpanded] = useState(false)
@@ -836,13 +840,38 @@ FORMATTED OUTPUT (格式化输出规范):
     return "1h"
   })
 
-  const [markedCandleTime, setMarkedCandleTime] = useState<number | null>(() => {
+  const [selectedCandleTimes, setSelectedCandleTimes] = useState<number[]>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("markedCandleTime")
-      return saved ? Number.parseInt(saved) : null
+      const saved = localStorage.getItem("selectedCandleTimes")
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed)) {
+            return parsed
+              .map((time) => Number.parseInt(time))
+              .filter((time) => !Number.isNaN(time))
+              .sort((a, b) => a - b)
+              .slice(-2)
+          }
+        } catch {
+          // ignore parse errors and fallback to legacy key
+        }
+      }
+      const legacy = localStorage.getItem("markedCandleTime")
+      if (legacy) {
+        const parsedLegacy = Number.parseInt(legacy)
+        return Number.isNaN(parsedLegacy) ? [] : [parsedLegacy]
+      }
     }
-    return null
+    return []
   })
+  const latestSelectedCandleTime =
+    selectedCandleTimes.length > 0 ? selectedCandleTimes[selectedCandleTimes.length - 1] : null
+  useEffect(() => {
+    if (!isRangeTesting) {
+      activeCandleTimeRef.current = latestSelectedCandleTime ?? null
+    }
+  }, [isRangeTesting, latestSelectedCandleTime])
 
   const [klineData, setKlineData] = useState<KlineData[]>([])
   const [isLoadingKline, setIsLoadingKline] = useState(false)
@@ -1227,7 +1256,6 @@ FORMATTED OUTPUT (格式化输出规范):
   // const [limit, setKlineLimit] = useState(() => getPersistedState("klineLimit", 100)) // Removed, replaced by state at top
   // const [tradingPair, setTradingPair] = useState(() => getPersistedState("tradingPair", "BTCUSDT")) // Removed, replaced by state at top
   // const [klineInterval, setKlineInterval] = useState(() => getPersistedState("klineInterval", "1h")) // Removed, replaced by state at top
-  // const [markedCandleTime, setMarkedCandleTime] = useState<number | null>(() => getPersistedState("markedCandleTime", null)) // Removed, replaced by state at top
 
   // Effect to save state changes to localStorage
   useEffect(() => {
@@ -1243,8 +1271,9 @@ FORMATTED OUTPUT (格式化输出规范):
     setPersistedState("klineEndTime", klineEndTime)
   }, [klineEndTime])
   useEffect(() => {
-    setPersistedState("markedCandleTime", markedCandleTime)
-  }, [markedCandleTime])
+    setPersistedState("selectedCandleTimes", selectedCandleTimes)
+    setPersistedState("markedCandleTime", latestSelectedCandleTime)
+  }, [selectedCandleTimes, latestSelectedCandleTime])
 
   const fetchKlineData = useCallback(
     async (pair: string, interval: string, limit: number, endTime?: number): Promise<KlineData[]> => {
@@ -1853,13 +1882,30 @@ FORMATTED OUTPUT (格式化输出规范):
 
       setContext(klineJson)
 
-      // Mark the clicked candle's time
-      setMarkedCandleTime(clickedCandle.time)
-
-      toast({
-        title: "K线数据已填入",
-        description: `已将 ${dataBeforeClick.length} 条K线数据填入上下文`,
+      let hitSelectionLimit = false
+      setSelectedCandleTimes((prev) => {
+        if (prev.includes(clickedCandle.time)) {
+          return prev.filter((time) => time !== clickedCandle.time)
+        }
+        if (prev.length >= 2) {
+          hitSelectionLimit = true
+          return prev
+        }
+        const updated = [...prev, clickedCandle.time].sort((a, b) => a - b)
+        return updated
       })
+
+      if (hitSelectionLimit) {
+        toast({
+          title: "最多选择两个蜡烛",
+          description: "请先取消一个已选蜡烛再继续选择。",
+        })
+      } else {
+        toast({
+          title: "K线数据已填入",
+          description: `已将 ${dataBeforeClick.length} 条K线数据填入上下文`,
+        })
+      }
     },
     [buildContextJson, toast],
   )
@@ -1968,8 +2014,22 @@ FORMATTED OUTPUT (格式化输出规范):
           if (settings.klineEndTime !== undefined) setKlineEndTime(settings.klineEndTime) // Added klineEndTime to settings
           // Load markdown parsing state
           if (settings.parseResponseMarkdown !== undefined) setParseResponseMarkdown(settings.parseResponseMarkdown)
-          // Load marked candle time from settings
-          if (settings.markedCandleTime !== undefined) setMarkedCandleTime(settings.markedCandleTime)
+          // Load selected candle times from settings (fallback to legacy single value)
+          if (Array.isArray(settings.selectedCandleTimes)) {
+            setSelectedCandleTimes(
+              settings.selectedCandleTimes
+                .map((time) => Number(time))
+                .filter((time) => !Number.isNaN(time))
+                .sort((a, b) => a - b)
+                .slice(-2),
+            )
+          } else if (settings.markedCandleTime !== undefined) {
+            if (settings.markedCandleTime === null) {
+              setSelectedCandleTimes([])
+            } else {
+              setSelectedCandleTimes([Number(settings.markedCandleTime)])
+            }
+          }
         }
 
         console.log("[v0] Loading images from IndexedDB...")
@@ -2071,8 +2131,9 @@ FORMATTED OUTPUT (格式化输出规范):
       klineEndTime, // Added klineEndTime to settings
       // Add markdown parsing state to settings
       parseResponseMarkdown,
-      // Add marked candle time to settings
-      markedCandleTime,
+      selectedCandleTimes,
+      // Maintain legacy single value for compatibility
+      markedCandleTime: latestSelectedCandleTime,
     }
     localStorage.setItem("llm-api-test-settings", JSON.stringify(settings))
   }, [
@@ -2120,7 +2181,8 @@ FORMATTED OUTPUT (格式化输出规范):
     limit, // CHANGE: Added klineLimit dependency
     klineEndTime, // Added klineEndTime dependency
     parseResponseMarkdown, // Added parseResponseMarkdown dependency
-    markedCandleTime, // Added markedCandleTime dependency
+    selectedCandleTimes,
+    latestSelectedCandleTime,
   ])
 
   useEffect(() => {
@@ -3352,13 +3414,16 @@ FORMATTED OUTPUT (格式化输出规范):
       if (responseContent) {
         const parsedScore = parseScoreFromResponse(responseContent)
         if (parsedScore !== null) {
+          const activeCandleTimeForScore = activeCandleTimeRef.current ?? latestSelectedCandleTime
           // Check if a candle is marked
-          if (markedCandleTime !== null) {
+          if (activeCandleTimeForScore !== null) {
             // User clicked a candle: save as fixed score
-            console.log(`[v0] Parsed score ${parsedScore} for marked candle at ${new Date(markedCandleTime).toLocaleString()}`)
+            console.log(
+              `[v0] Parsed score ${parsedScore} for marked candle at ${new Date(activeCandleTimeForScore).toLocaleString()}`,
+            )
             setFixedCandleScores((prev) => {
               const newScores = new Map(prev)
-              newScores.set(markedCandleTime, parsedScore)
+              newScores.set(activeCandleTimeForScore, parsedScore)
               return newScores
             })
           } else {
@@ -3379,8 +3444,9 @@ FORMATTED OUTPUT (格式化输出规范):
           if (parsedScore >= 70 && ntfyTopics.trim()) {
             const summaryText = extractSummaryAfterScore(responseContent)
             // For notification, use the actual latest candle time
-            const notificationCandleTime = markedCandleTime !== null
-              ? markedCandleTime
+            const activeNotificationTime = activeCandleTimeRef.current ?? latestSelectedCandleTime
+            const notificationCandleTime = activeNotificationTime !== null
+              ? activeNotificationTime
               : extractLatestCandleTimeFromRequest(requestContent) ?? klineData[klineData.length - 1]?.time ?? Date.now()
             void sendNtfyNotification({
               score: parsedScore,
@@ -3488,13 +3554,93 @@ FORMATTED OUTPUT (格式化输出规范):
       if (isTimerRunningRef.current) {
         scheduleNextTest()
       }
-    }
   }
+}
+
+  const runRangeTestsSequentially = useCallback(async () => {
+    if (selectedCandleTimes.length !== 2 || isRangeTesting) {
+      return false
+    }
+
+    const [startTime, endTime] = [...selectedCandleTimes].sort((a, b) => a - b)
+    const startIndex = klineData.findIndex((item) => item.time === startTime)
+    const endIndex = klineData.findIndex((item) => item.time === endTime)
+
+    if (startIndex === -1 || endIndex === -1 || startIndex > endIndex) {
+      toast({
+        variant: "destructive",
+        title: "区间无效",
+        description: "所选蜡烛不在当前 K 线数据中，请重新选择。",
+      })
+      return false
+    }
+
+    const totalSteps = endIndex - startIndex + 1
+    console.log(
+      `[v0] Starting range test across ${totalSteps} candles from ${new Date(startTime).toLocaleString()} to ${new Date(endTime).toLocaleString()}`,
+    )
+
+    rangeTestAbortRef.current = false
+    setIsRangeTesting(true)
+    setRangeTestProgress({ current: 0, total: totalSteps })
+
+    try {
+      for (let offset = 0; offset < totalSteps; offset++) {
+        if (rangeTestAbortRef.current) {
+          break
+        }
+
+        const currentIndex = startIndex + offset
+        const targetTime = klineData[currentIndex].time
+        const dataBefore = klineData.slice(0, currentIndex + 1)
+        const klineJson = buildContextJson(dataBefore)
+
+        setContext(klineJson)
+        setRangeTestProgress({ current: offset + 1, total: totalSteps })
+        activeCandleTimeRef.current = targetTime
+        console.log(
+          `[v0] Range test step ${offset + 1}/${totalSteps}: candle ${new Date(targetTime).toLocaleString()}`,
+        )
+
+        await handleTest(undefined, klineJson)
+
+        if (rangeTestAbortRef.current) {
+          break
+        }
+
+        if (offset < totalSteps - 1) {
+          const nextStart = klineData[currentIndex + 1].time
+          setSelectedCandleTimes([nextStart, endTime])
+        } else {
+          setSelectedCandleTimes([endTime])
+        }
+      }
+
+      if (!rangeTestAbortRef.current) {
+        toast({
+          title: "区间测试完成",
+          description: `共执行 ${totalSteps} 次测试`,
+        })
+      }
+    } finally {
+      const finalActiveTime = rangeTestAbortRef.current ? activeCandleTimeRef.current : endTime
+      activeCandleTimeRef.current = finalActiveTime ?? null
+      rangeTestAbortRef.current = false
+      setIsRangeTesting(false)
+      setRangeTestProgress(null)
+    }
+
+    return true
+  }, [buildContextJson, handleTest, isRangeTesting, klineData, selectedCandleTimes, setSelectedCandleTimes, toast])
 
   // Schedule next test after response returns
   const scheduleNextTest = async () => {
     // Check if timer is still running (use ref for immediate check)
     if (!isTimerRunningRef.current) {
+      return
+    }
+    if (isRangeTesting) {
+      console.log("[v0] Timer schedule skipped: range testing in progress")
       return
     }
 
@@ -3511,7 +3657,7 @@ FORMATTED OUTPUT (格式化输出规范):
       }
 
       // Check if there's a selected candle
-      if (markedCandleTime === null) {
+      if (latestSelectedCandleTime === null) {
         // No selected candle, reload K-line data before test
         console.log("[v0] Timer tick: No selected candle, reloading K-line data...")
         try {
@@ -3583,12 +3729,23 @@ FORMATTED OUTPUT (格式化输出规范):
     }
   }
 
+  const handleStopRangeTest = () => {
+    if (!isRangeTesting) return
+    rangeTestAbortRef.current = true
+    handleInterruptTest()
+  }
+
   // Combine test and timer start logic
   const handleStartTest = async () => {
     // <-- Modified to be async
     console.log("[v0] handleStartTest called, checking for selected candle...")
 
-    if (markedCandleTime !== null) {
+    if (selectedCandleTimes.length === 2) {
+      await runRangeTestsSequentially()
+      return
+    }
+
+    if (latestSelectedCandleTime !== null) {
       // If candle is selected, do nothing - just proceed with existing message
       console.log("[v0] Selected candle exists, proceeding without reload")
     } else {
@@ -3706,7 +3863,7 @@ FORMATTED OUTPUT (格式化输出规范):
     setKlineData([])
     setKlineEndTime(undefined) // Reset endTime
     setKlineLimit(100) // Reset klineLimit
-    setMarkedCandleTime(null) // Reset marked candle time
+    setSelectedCandleTimes([]) // Reset selected candles
 
     // Remove specific items from localStorage
     localStorage.removeItem("llm-api-test-settings") // Clear all settings and reload defaults
@@ -3747,7 +3904,7 @@ FORMATTED OUTPUT (格式化输出规范):
     setKlineData([])
     setKlineEndTime(undefined) // Reset endTime
     setKlineLimit(100) // Reset klineLimit
-    setMarkedCandleTime(null) // Reset marked candle time
+    setSelectedCandleTimes([]) // Reset selected candles
 
     // Remove specific items from localStorage
     localStorage.removeItem("llm-api-test-settings") // Clear all settings and reload defaults
@@ -5643,8 +5800,8 @@ FORMATTED OUTPUT (格式化输出规范):
               limit={limit}
               onLimitChange={handleLimitChange}
               onForceReload={fetchKlineData}
-              markedCandleTime={markedCandleTime}
-              onMarkedCandleTimeChange={setMarkedCandleTime}
+              selectedCandleTimes={selectedCandleTimes}
+              onSelectedCandleTimesChange={setSelectedCandleTimes}
               onIndicatorsChange={handleIndicatorsChange}
               candleScores={candleScores}
             />
@@ -5669,7 +5826,12 @@ FORMATTED OUTPUT (格式化输出规范):
                   <RotateCcw className="mr-2 size-4" />
                   重置参数
                 </Button>
-                {isTimerRunning ? (
+                {isRangeTesting ? (
+                  <Button onClick={handleStopRangeTest} variant="destructive" size="sm">
+                    <StopCircle className="mr-2 size-4" />
+                    终止回测
+                  </Button>
+                ) : isTimerRunning ? (
                   <Button onClick={stopTimer} variant="destructive" size="sm">
                     <StopCircle className="mr-2 size-4" />
                     停止定时
@@ -5684,6 +5846,11 @@ FORMATTED OUTPUT (格式化输出规范):
                     <Play className="mr-2 size-4" />
                     开始测试
                   </Button>
+                )}
+                {isRangeTesting && rangeTestProgress && (
+                  <span className="text-xs text-muted-foreground">
+                    回测进度: {rangeTestProgress.current}/{rangeTestProgress.total}
+                  </span>
                 )}
               </div>
             </div>

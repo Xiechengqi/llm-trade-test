@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   createChart,
   CandlestickSeries,
@@ -150,8 +150,8 @@ interface CandlestickChartProps {
   limit?: number
   onLimitChange?: (limit: number) => void
   onForceReload?: () => void
-  markedCandleTime: number | null
-  onMarkedCandleTimeChange?: (time: number | null) => void
+  selectedCandleTimes: number[]
+  onSelectedCandleTimesChange?: (times: number[]) => void
   onIndicatorsChange?: (indicators: IndicatorConfig[]) => void
   candleScores?: Map<number, number>
 }
@@ -171,8 +171,8 @@ export function CandlestickChart({
   limit = 100,
   onLimitChange,
   onForceReload,
-  markedCandleTime: externalMarkedCandleTime,
-  onMarkedCandleTimeChange,
+  selectedCandleTimes,
+  onSelectedCandleTimesChange,
   onIndicatorsChange,
   candleScores,
 }: CandlestickChartProps) {
@@ -256,18 +256,11 @@ export function CandlestickChart({
     }
     return ""
   })
-
-  const [internalMarkedCandleTime, setInternalMarkedCandleTime] = useState<number | null>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("markedCandleTime")
-      return saved ? Number.parseInt(saved) : null
-    }
-    return null
-  })
-
-  const markedCandleTime = externalMarkedCandleTime !== undefined ? externalMarkedCandleTime : internalMarkedCandleTime
-  const setMarkedCandleTime = onMarkedCandleTimeChange || setInternalMarkedCandleTime
-  const [markerTime, setMarkerTime] = useState<number | null>(null)
+  const MAX_SELECTED_CANDLES = 2
+  const sortedSelectedCandleTimes = useMemo(
+    () => [...selectedCandleTimes].sort((a, b) => a - b),
+    [selectedCandleTimes],
+  )
 
   const normalizeToSeconds = useCallback((timestamp: number) => Math.floor(timestamp / 1000), [])
 
@@ -395,20 +388,6 @@ export function CandlestickChart({
   }, [data, normalizeToSeconds])
 
   useEffect(() => {
-    if (markedCandleTime === null) {
-      setMarkerTime(null)
-      return
-    }
-
-    const markedCandle = data.find((item) => item.time === markedCandleTime)
-    if (markedCandle) {
-      setMarkerTime(normalizeToSeconds(markedCandle.time))
-    } else {
-      setMarkerTime(null)
-    }
-  }, [markedCandleTime, data, normalizeToSeconds])
-
-  useEffect(() => {
     if (!chartRef.current || !onCandleClick) return
 
     const handleClick = (param: any) => {
@@ -423,9 +402,6 @@ export function CandlestickChart({
 
         console.log("[v0] Candle clicked, time:", clickedCandle.time)
 
-        setMarkedCandleTime(clickedCandle.time)
-        setMarkerTime(clickedTime)
-
         onCandleClick(dataBeforeClick, clickedCandle)
       }
     }
@@ -437,7 +413,7 @@ export function CandlestickChart({
         chartRef.current.unsubscribeClick(handleClick)
       }
     }
-  }, [data, onCandleClick, normalizeToSeconds, setMarkedCandleTime])
+  }, [data, onCandleClick, normalizeToSeconds])
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -475,16 +451,6 @@ export function CandlestickChart({
       }
     }
   }, [selectedDate, selectedTime, onTimePointChange])
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      if (markedCandleTime !== null) {
-        localStorage.setItem("markedCandleTime", markedCandleTime.toString())
-      } else {
-        localStorage.removeItem("markedCandleTime")
-      }
-    }
-  }, [markedCandleTime])
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -795,15 +761,20 @@ export function CandlestickChart({
 
     const markers: SeriesMarker<Time>[] = []
 
-    // Add marked candle marker (if exists)
-    if (externalMarkedCandleTime !== null) {
-      const normalizedTime = normalizeToSeconds(externalMarkedCandleTime)
-      markers.push({
-        time: normalizedTime as Time,
-        position: "aboveBar",
-        color: "#f59e0b",
-        shape: "arrowDown",
-        text: "◆",
+    if (sortedSelectedCandleTimes.length > 0) {
+      sortedSelectedCandleTimes.forEach((timestamp, index) => {
+        const normalizedTime = normalizeToSeconds(timestamp)
+        const candleExists = data.some((candle) => normalizeToSeconds(candle.time) === normalizedTime)
+        if (!candleExists) return
+
+        const isLatest = index === sortedSelectedCandleTimes.length - 1
+        markers.push({
+          time: normalizedTime as Time,
+          position: "aboveBar",
+          color: isLatest ? "#f59e0b" : "#3b82f6",
+          shape: "arrowDown",
+          text: isLatest ? "终" : "起",
+        })
       })
     }
 
@@ -826,7 +797,7 @@ export function CandlestickChart({
     }
 
     markersPluginRef.current.setMarkers(markers)
-  }, [externalMarkedCandleTime, data, normalizeToSeconds, candleScores])
+  }, [sortedSelectedCandleTimes, data, normalizeToSeconds, candleScores])
 
   const handleAddIndicator = (config: IndicatorConfig) => {
     setActiveIndicators((prev) => [...prev, config])
@@ -962,21 +933,42 @@ export function CandlestickChart({
 
   return (
     <div className="space-y-4">
-      {markedCandleTime && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 px-3 py-2 rounded-md">
-          <span className="text-black dark:text-white">●</span>
-          <span>已选中蜡烛: {new Date(markedCandleTime).toLocaleString()}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 ml-auto"
-            onClick={() => {
-              console.log("[v0] Clear marker button clicked")
-              setMarkedCandleTime(null)
-            }}
-          >
-            清除标记
-          </Button>
+      {sortedSelectedCandleTimes.length > 0 && (
+        <div className="space-y-2 text-sm text-muted-foreground bg-muted/50 px-3 py-2 rounded-md">
+          <div className="flex items-center gap-2">
+            <span className="text-black dark:text-white">●</span>
+            <div className="flex flex-col gap-1">
+              {sortedSelectedCandleTimes.map((time, index) => {
+                const label =
+                  sortedSelectedCandleTimes.length === 2
+                    ? index === 0
+                      ? "最早"
+                      : "最新"
+                    : "当前"
+                return (
+                  <span key={time} className="text-xs md:text-sm">
+                    {label}蜡烛: {new Date(time).toLocaleString()}
+                  </span>
+                )
+              })}
+            </div>
+            {onSelectedCandleTimesChange && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 ml-auto"
+                onClick={() => {
+                  console.log("[v0] Clear selected candles button clicked")
+                  onSelectedCandleTimesChange([])
+                }}
+              >
+                清除
+              </Button>
+            )}
+          </div>
+          {sortedSelectedCandleTimes.length >= MAX_SELECTED_CANDLES && (
+            <p className="text-xs text-amber-600">已选中两个蜡烛，如需更换请先取消其中一个</p>
+          )}
         </div>
       )}
 

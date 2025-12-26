@@ -759,6 +759,10 @@ FORMATTED OUTPUT (格式化输出规范):
   const [endpoint, setEndpoint] = useState("") // This state seems redundant with baseURL, consider consolidating.
   const [apiKey, setApiKey] = useState(DEFAULT_VALUES.apiKey)
   const [ntfyTopics, setNtfyTopics] = useState(DEFAULT_VALUES.ntfyTopics)
+  // 使用 ref 保存 ntfyTopics 以避免依赖问题
+  const ntfyTopicsRef = useRef(ntfyTopics)
+  ntfyTopicsRef.current = ntfyTopics
+
   const [showApiKey, setShowApiKey] = useState(false)
   const [isPromptExpanded, setIsPromptExpanded] = useState(false)
   const [isContextExpanded, setIsContextExpanded] = useState(false)
@@ -962,6 +966,131 @@ FORMATTED OUTPUT (格式化输出规范):
     return Math.max(0, Math.round(parsed))
   }, [])
 
+  // 测试策略回调
+  const handleTestStrategy = useCallback(async (strategy: NotificationStrategyConfig) => {
+    const referenceScore = lastScoreRef.current ?? 60
+    let referenceCandle =
+      activeCandleTimeRef.current !== null
+        ? klineDataRef.current.find((item) => item.time === activeCandleTimeRef.current) ?? null
+        : klineDataRef.current[klineDataRef.current.length - 1] ?? null
+
+    // 如果没有K线数据，创建一个模拟数据
+    if (!referenceCandle) {
+      const now = Date.now()
+      referenceCandle = {
+        time: now,
+        open: 50000,
+        high: 51000,
+        low: 49000,
+        close: 50500,
+        volume: 100,
+      }
+    }
+
+    const strategySummary = `[测试通知] ${strategy.name} 触发检测，模拟评分 ${referenceScore}`
+    const topicString =
+      strategy.topic && strategy.topic.trim().length > 0 ? strategy.topic : ntfyTopicsRef.current
+    const topics = Array.from(
+      new Set(
+        (topicString || "")
+          .split(/[,，\s]+/)
+          .map((t) => t.trim())
+          .filter(Boolean),
+      ),
+    )
+
+    if (topics.length === 0) {
+      toast({
+        title: "无法测试",
+        description: "请先配置全局 ntfy topic 或为此策略指定 topic",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const priorityOverride =
+      strategy.type === "panicBuy" ? "high" : strategy.type === "takeProfit" ? "low" : "default"
+
+    const formattedTime = new Date(referenceCandle.time)
+      .toLocaleString("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      })
+      .replace(/\//g, "-")
+
+    // 标题使用英文避免编码问题，中文放在 body 中
+    const title = `Strategy Test - ${strategy.type}`
+    const priority = priorityOverride || (referenceScore >= 90 ? "high" : "default")
+    const tagHeader = `strategy,${strategy.type},test`
+
+    const messageBody = [
+      `策略提醒 · ${strategy.name}（测试）`,
+      ``,
+      `交易对：${tradingPairRef.current || "-"}`,
+      `蜡烛时间：${formattedTime}`,
+      `看多评分：${referenceScore}`,
+      `摘要：${strategySummary || "暂无概括"}`,
+    ].join("\n")
+
+    // 使用 Promise.all 确保所有请求完成
+    console.log(`[v0] 发送测试通知到 topics: ${topics.join(", ")}`)
+    await Promise.all(
+      topics.map(async (topic) => {
+        try {
+          const response = await fetch(`https://ntfy.sh/${topic}`, {
+            method: "POST",
+            headers: {
+              "X-Title": title,
+              "X-Tags": tagHeader,
+              "X-Priority": priority,
+              Markdown: "yes",
+            },
+            body: messageBody,
+          })
+
+          if (!response.ok) {
+            console.warn(`[v0] ntfy 测试通知发送失败 (${topic}): ${response.status} ${response.statusText}`)
+          } else {
+            console.log(`[v0] ntfy 测试通知发送成功 (${topic})`)
+          }
+        } catch (err) {
+          console.error(`[v0] ntfy 测试通知异常 (${topic}):`, err)
+        }
+      }),
+    )
+
+    // 添加到通知历史记录
+    const now = Date.now()
+    setNotificationHistory((prev) => {
+      const newRecord: NotificationHistoryItem = {
+        id: `${strategy.id}-${referenceCandle.time}-${now}`,
+        timestamp: now,
+        strategyId: strategy.id,
+        strategyName: strategy.name,
+        score: referenceScore,
+        candleTime: referenceCandle.time,
+        summary: strategySummary,
+        topics: topics,
+        priority: priorityOverride,
+      }
+      const updated = [newRecord, ...prev].slice(0, 200)
+      saveNotificationHistoryToDB(updated).catch((error) =>
+        console.error("[v0] Failed to save notification history:", error),
+      )
+      return updated
+    })
+
+    toast({
+      title: "测试通知已发送",
+      description: `策略 "${strategy.name}" 的测试通知已发送到 ${topics.join(", ")}`,
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // CHANGE: Initialize K-line chart state from localStorage
   const [limit, setKlineLimit] = useState(() => {
     if (typeof window !== "undefined") {
@@ -1021,6 +1150,10 @@ FORMATTED OUTPUT (格式化输出规范):
   }, [isRangeTesting, latestSelectedCandleTime])
 
   const [klineData, setKlineData] = useState<KlineData[]>([])
+  // 使用 ref 保存 klineData 以避免依赖问题
+  const klineDataRef = useRef(klineData)
+  klineDataRef.current = klineData
+
   const [isLoadingKline, setIsLoadingKline] = useState(false)
   const [tradingPairSearch, setTradingPairSearch] = useState("")
   const [klineEndTime, setKlineEndTime] = useState<number | undefined>(() => {
@@ -3102,14 +3235,24 @@ FORMATTED OUTPUT (格式化输出规范):
         })
         .replace(/\//g, "-")
 
-      const messageBody = [
+      // 如果 titleOverride 包含中文，将其移到 body 第一行
+      const englishTitle = titleOverride && /[\u4e00-\u9fa5]/.test(titleOverride)
+        ? `Kline Notification - ${tradingPair || "N/A"}`
+        : titleOverride || `Kline score >=70 - ${tradingPair || "N/A"}`
+
+      const bodyLines = []
+      if (titleOverride && /[\u4e00-\u9fa5]/.test(titleOverride)) {
+        bodyLines.push(titleOverride, ``)
+      }
+      bodyLines.push(
         `交易对：${tradingPair || "-"}`,
         `蜡烛时间：${formattedTime}`,
         `看多评分：${score}`,
-        `摘要：${summary || "暂无概括"}`,
-      ].join("\n")
+        `摘要：${summary || "暂无概括"}`
+      )
+      const messageBody = bodyLines.join("\n")
 
-      const title = titleOverride || `Kline score >=70 - ${tradingPair || "N/A"}`
+      const title = englishTitle
       const priority = priorityOverride || (score >= 90 ? "high" : "default")
       const tagHeader = tags || "trade,kline,long"
 
@@ -6819,6 +6962,17 @@ FORMATTED OUTPUT (格式化输出规范):
                             onCheckedChange={(checked) => handleStrategyChange(strategy.id, { enabled: checked })}
                             disabled={strategyInputsDisabled}
                           />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleTestStrategy(strategy)}
+                            disabled={strategyInputsDisabled}
+                            title="测试此策略"
+                          >
+                            <Zap className="h-4 w-4" />
+                          </Button>
                           {strategy.type === "custom" && (
                             <Button
                               type="button"

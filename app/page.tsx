@@ -33,6 +33,7 @@ import {
   Loader2,
   RefreshCw,
   Heart,
+  Plus,
 } from "lucide-react" // Import Copy, Pencil, List, Eye, EyeOff, RotateCcw, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calendar, Check, Clock, X, Play, StopCircle icons
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react" // Import useRef, useMemo, useCallback
@@ -40,6 +41,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
@@ -49,9 +51,37 @@ import { TableBody, TableCell, TableHead, TableRow, Table } from "@/components/u
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 
 type IndicatorFilterKey = `indicator-${number}`
 type ContextFilter = "all" | "kline" | IndicatorFilterKey
+
+type NotificationStrategyType = "panicBuy" | "trendFollow" | "takeProfit" | "custom"
+interface NotificationStrategyConfig {
+  id: string
+  name: string
+  enabled: boolean
+  type: NotificationStrategyType
+  minScore?: number
+  maxScore?: number
+  requireBullishCandle?: boolean
+  requireBearishCandle?: boolean
+  requireScoreIncrease?: number
+  cooldownMinutes?: number
+  topic?: string
+}
+
+const notificationStrategyDescriptions: Record<NotificationStrategyType, string> = {
+  panicBuy: "评分跌入极低区间并伴随走弱，提醒博反弹机会",
+  trendFollow: "评分回升并伴随阳线，提示趋势确认后的右侧交易",
+  takeProfit: "评分持续高企，提醒谨慎追高或逢高减仓",
+  custom: "自定义分数区间与附加条件",
+}
+
+const createStrategyId = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `strategy-${Date.now()}-${Math.random().toString(16).slice(2)}`
 import {
   calculateATR,
   calculateBOLL,
@@ -796,6 +826,8 @@ FORMATTED OUTPUT (格式化输出规范):
   const [rangeTestProgress, setRangeTestProgress] = useState<{ current: number; total: number } | null>(null)
   const rangeTestAbortRef = useRef(false)
   const activeCandleTimeRef = useRef<number | null>(null)
+  const lastScoreRef = useRef<number | null>(null)
+  const strategyNotificationTrackerRef = useRef<Map<string, { lastSent: number; lastCandleTime?: number }>>(new Map())
   const audioContextRef = useRef<AudioContext | null>(null)
   const [responseDuration, setResponseDuration] = useState<number | null>(null)
   const [isParametersExpanded, setIsParametersExpanded] = useState(false)
@@ -814,6 +846,89 @@ FORMATTED OUTPUT (格式化输出规范):
   const [showImageUrlInput, setShowImageUrlInput] = useState(false)
   const [isAddingImageUrl, setIsAddingImageUrl] = useState(false)
   const [zoomedImage, setZoomedImage] = useState<MessageImage | null>(null)
+  const DEFAULT_NOTIFICATION_STRATEGIES: NotificationStrategyConfig[] = [
+    {
+      id: "panicBuy",
+      name: "左侧抄底提醒",
+      type: "panicBuy",
+      enabled: true,
+      maxScore: 40,
+      requireBearishCandle: true,
+      cooldownMinutes: 60,
+      topic: "",
+    },
+    {
+      id: "trendFollow",
+      name: "右侧趋势确认",
+      type: "trendFollow",
+      enabled: true,
+      minScore: 60,
+      requireBullishCandle: true,
+      requireScoreIncrease: 10,
+      cooldownMinutes: 60,
+      topic: "",
+    },
+    {
+      id: "takeProfit",
+      name: "高分谨慎提示",
+      type: "takeProfit",
+      enabled: false,
+      minScore: 80,
+      cooldownMinutes: 120,
+      topic: "",
+    },
+  ]
+  const [notificationStrategies, setNotificationStrategies] = useState<NotificationStrategyConfig[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("notificationStrategies")
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed)) {
+            return parsed
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return DEFAULT_NOTIFICATION_STRATEGIES
+  })
+  const strategyInputsDisabled = !timerEnabled
+  const handleStrategyChange = useCallback(
+    (id: string, updates: Partial<NotificationStrategyConfig>) => {
+      setNotificationStrategies((prev) => prev.map((strategy) => (strategy.id === id ? { ...strategy, ...updates } : strategy)))
+    },
+    [],
+  )
+  const handleAddStrategy = useCallback(() => {
+    const newStrategy: NotificationStrategyConfig = {
+      id: createStrategyId(),
+      name: "自定义策略",
+      type: "custom",
+      enabled: true,
+      minScore: 50,
+      maxScore: 80,
+      cooldownMinutes: 30,
+      topic: "",
+    }
+    setNotificationStrategies((prev) => [...prev, newStrategy])
+  }, [])
+  const handleRemoveStrategy = useCallback((id: string) => {
+    setNotificationStrategies((prev) => prev.filter((strategy) => strategy.id !== id))
+  }, [])
+  const normalizeScoreValue = useCallback((value: string): number | undefined => {
+    if (value.trim() === "") return undefined
+    const parsed = Number(value)
+    if (Number.isNaN(parsed)) return undefined
+    return Math.max(0, Math.min(100, parsed))
+  }, [])
+  const normalizePositiveNumber = useCallback((value: string): number | undefined => {
+    if (value.trim() === "") return undefined
+    const parsed = Number(value)
+    if (Number.isNaN(parsed)) return undefined
+    return Math.max(0, Math.round(parsed))
+  }, [])
 
   // CHANGE: Initialize K-line chart state from localStorage
   const [limit, setKlineLimit] = useState(() => {
@@ -1274,6 +1389,12 @@ FORMATTED OUTPUT (格式化输出规范):
     setPersistedState("selectedCandleTimes", selectedCandleTimes)
     setPersistedState("markedCandleTime", latestSelectedCandleTime)
   }, [selectedCandleTimes, latestSelectedCandleTime])
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("notificationStrategies", JSON.stringify(notificationStrategies))
+    }
+  }, [notificationStrategies])
 
   const fetchKlineData = useCallback(
     async (pair: string, interval: string, limit: number, endTime?: number): Promise<KlineData[]> => {
@@ -2014,6 +2135,7 @@ FORMATTED OUTPUT (格式化输出规范):
           if (settings.klineEndTime !== undefined) setKlineEndTime(settings.klineEndTime) // Added klineEndTime to settings
           // Load markdown parsing state
           if (settings.parseResponseMarkdown !== undefined) setParseResponseMarkdown(settings.parseResponseMarkdown)
+          if (Array.isArray(settings.notificationStrategies)) setNotificationStrategies(settings.notificationStrategies)
           // Load selected candle times from settings (fallback to legacy single value)
           if (Array.isArray(settings.selectedCandleTimes)) {
             setSelectedCandleTimes(
@@ -2131,6 +2253,7 @@ FORMATTED OUTPUT (格式化输出规范):
       klineEndTime, // Added klineEndTime to settings
       // Add markdown parsing state to settings
       parseResponseMarkdown,
+      notificationStrategies,
       selectedCandleTimes,
       // Maintain legacy single value for compatibility
       markedCandleTime: latestSelectedCandleTime,
@@ -2174,15 +2297,16 @@ FORMATTED OUTPUT (格式化输出规范):
     selectedOutputModalities,
     modelSearchQuery,
     availableInputModalities,
-    availableOutputModalities,
-    imageUrl,
-    showImageUrlInput,
-    isAddingImageUrl,
-    limit, // CHANGE: Added klineLimit dependency
-    klineEndTime, // Added klineEndTime dependency
-    parseResponseMarkdown, // Added parseResponseMarkdown dependency
-    selectedCandleTimes,
-    latestSelectedCandleTime,
+      availableOutputModalities,
+      imageUrl,
+      showImageUrlInput,
+      isAddingImageUrl,
+      limit, // CHANGE: Added klineLimit dependency
+      klineEndTime, // Added klineEndTime dependency
+      parseResponseMarkdown, // Added parseResponseMarkdown dependency
+      notificationStrategies,
+      selectedCandleTimes,
+      latestSelectedCandleTime,
   ])
 
   useEffect(() => {
@@ -2830,14 +2954,26 @@ FORMATTED OUTPUT (格式化输出规范):
       score,
       candleTime,
       summary,
+      titleOverride,
+      tags,
+      priorityOverride,
+      topicOverride,
     }: {
       score: number
       candleTime: number
       summary: string
+      titleOverride?: string
+      tags?: string
+      priorityOverride?: "max" | "high" | "default" | "low" | "min"
+      topicOverride?: string
     }) => {
+      const rawTopics =
+        topicOverride && topicOverride.trim().length > 0
+          ? topicOverride
+          : ntfyTopics
       const topics = Array.from(
         new Set(
-          ntfyTopics
+          rawTopics
             .split(/[,，\s]+/)
             .map((t) => t.trim())
             .filter(Boolean),
@@ -2867,8 +3003,9 @@ FORMATTED OUTPUT (格式化输出规范):
         `摘要：${summary || "暂无概括"}`,
       ].join("\n")
 
-      const title = `Kline score >=70 - ${tradingPair || "N/A"}`
-      const priority = score >= 90 ? "high" : "default"
+      const title = titleOverride || `Kline score >=70 - ${tradingPair || "N/A"}`
+      const priority = priorityOverride || (score >= 90 ? "high" : "default")
+      const tagHeader = tags || "trade,kline,long"
 
       await Promise.all(
         topics.map(async (topic) => {
@@ -2877,7 +3014,7 @@ FORMATTED OUTPUT (格式化输出规范):
               method: "POST",
               headers: {
                 "X-Title": title,
-                "X-Tags": "trade,kline,long",
+                "X-Tags": tagHeader,
                 "X-Priority": priority,
                 Markdown: "yes",
               },
@@ -3413,6 +3550,7 @@ FORMATTED OUTPUT (格式化输出规范):
       // Parse and save score
       if (responseContent) {
         const parsedScore = parseScoreFromResponse(responseContent)
+        const quickSummary = extractSummaryAfterScore(responseContent)
         if (parsedScore !== null) {
           const activeCandleTimeForScore = activeCandleTimeRef.current ?? latestSelectedCandleTime
           // Check if a candle is marked
@@ -3441,19 +3579,20 @@ FORMATTED OUTPUT (格式化输出规范):
             }
           }
 
-          if (parsedScore >= 70 && ntfyTopics.trim()) {
-            const summaryText = extractSummaryAfterScore(responseContent)
-            // For notification, use the actual latest candle time
-            const activeNotificationTime = activeCandleTimeRef.current ?? latestSelectedCandleTime
-            const notificationCandleTime = activeNotificationTime !== null
-              ? activeNotificationTime
-              : extractLatestCandleTimeFromRequest(requestContent) ?? klineData[klineData.length - 1]?.time ?? Date.now()
-            void sendNtfyNotification({
-              score: parsedScore,
-              candleTime: notificationCandleTime,
-              summary: summaryText,
-            })
-          }
+          const referenceCandle =
+            activeCandleTimeForScore !== null
+              ? klineData.find((item) => item.time === activeCandleTimeForScore) ?? null
+              : null
+          const previousScore = lastScoreRef.current
+          evaluateNotificationStrategies(
+            parsedScore,
+            referenceCandle,
+            previousScore !== null ? parsedScore - previousScore : null,
+            quickSummary,
+          )
+          lastScoreRef.current = parsedScore
+
+          // 默认≥70分通知已移除，改用策略系统驱动发送
         } else {
           console.log(`[v0] Failed to parse score from response.`)
         }
@@ -3734,6 +3873,90 @@ FORMATTED OUTPUT (格式化输出规范):
     rangeTestAbortRef.current = true
     handleInterruptTest()
   }
+
+  const evaluateNotificationStrategies = useCallback(
+    (score: number, candle: KlineData | null, scoreDelta: number | null, summaryText: string) => {
+      if (!timerEnabled || notificationStrategies.length === 0) {
+        return []
+      }
+
+      const now = Date.now()
+
+      const matches = notificationStrategies.filter((strategy) => {
+        if (!strategy.enabled) return false
+        if (strategy.minScore !== undefined && score < strategy.minScore) return false
+        if (strategy.maxScore !== undefined && score > strategy.maxScore) return false
+        if (strategy.requireBullishCandle && (!candle || candle.close <= candle.open)) return false
+        if (strategy.requireBearishCandle && (!candle || candle.close >= candle.open)) return false
+        if (
+          strategy.requireScoreIncrease !== undefined &&
+          (scoreDelta === null || scoreDelta < strategy.requireScoreIncrease)
+        ) {
+          return false
+        }
+        const trackerEntry = strategyNotificationTrackerRef.current.get(strategy.id)
+        const cooldownMs = (strategy.cooldownMinutes ?? 0) * 60 * 1000
+        if (trackerEntry) {
+          if (trackerEntry.lastCandleTime && candle && trackerEntry.lastCandleTime === candle.time) {
+            return false
+          }
+          if (cooldownMs > 0 && now - trackerEntry.lastSent < cooldownMs) {
+            return false
+          }
+        }
+        return true
+      })
+
+      matches.forEach((strategy) => {
+        const candleTime = candle?.time ?? Date.now()
+        const deltaText =
+          scoreDelta !== null && !Number.isNaN(scoreDelta)
+            ? `${scoreDelta >= 0 ? "+" : ""}${scoreDelta.toFixed(1)}`
+            : "N/A"
+        const directionText = candle
+          ? candle.close >= candle.open
+            ? "阳线"
+            : "阴线"
+          : "未知K线"
+        const strategySummary =
+          summaryText && summaryText.trim().length > 0
+            ? `${strategy.name}触发，当前评分 ${score}${
+                scoreDelta !== null ? `（变化 ${deltaText}）` : ""
+              }。${summaryText}`
+            : `${strategy.name}触发，当前评分 ${score}${
+                scoreDelta !== null ? `（变化 ${deltaText}）` : ""
+              }，K线状态：${directionText}。`
+
+        const priorityOverride =
+          strategy.type === "panicBuy" ? "high" : strategy.type === "takeProfit" ? "low" : "default"
+
+        void sendNtfyNotification({
+          score,
+          candleTime,
+          summary: strategySummary,
+          titleOverride: `策略提醒 · ${strategy.name}`,
+          tags: `strategy,${strategy.type}`,
+          priorityOverride,
+          topicOverride: strategy.topic,
+        })
+
+        strategyNotificationTrackerRef.current.set(strategy.id, {
+          lastSent: now,
+          lastCandleTime: candle?.time,
+        })
+      })
+
+      if (matches.length > 0) {
+        console.log(
+          "[v0] Notification strategy triggered:",
+          matches.map((item) => `${item.name}#${item.id}`),
+        )
+      }
+
+      return matches
+    },
+    [notificationStrategies, sendNtfyNotification, timerEnabled],
+  )
 
   // Combine test and timer start logic
   const handleStartTest = async () => {
@@ -6395,6 +6618,188 @@ FORMATTED OUTPUT (格式化输出规范):
                     </span>
                   )}
                 </div>
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-dashed border-muted-foreground/30 p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">通知策略</span>
+                      <Badge variant={timerEnabled ? "default" : "secondary"}>
+                        {timerEnabled ? "定时启用" : "定时未启用"}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      仅在启用定时后，根据配置策略自动触发通知
+                    </p>
+                  </div>
+                  {!timerEnabled && (
+                    <span className="text-xs text-muted-foreground">开启定时后可编辑并生效通知策略</span>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  {notificationStrategies.map((strategy) => (
+                    <div key={strategy.id} className="rounded-lg border bg-background/80 p-3 space-y-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          {strategy.type === "custom" ? (
+                            <Input
+                              value={strategy.name}
+                              onChange={(e) => handleStrategyChange(strategy.id, { name: e.target.value })}
+                              disabled={strategyInputsDisabled}
+                              className="h-8 w-48"
+                              placeholder="策略名称"
+                            />
+                          ) : (
+                            <p className="text-sm font-medium">{strategy.name}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {notificationStrategyDescriptions[strategy.type] || "自定义策略"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">{strategy.enabled ? "已启用" : "已禁用"}</span>
+                          <Switch
+                            checked={strategy.enabled}
+                            onCheckedChange={(checked) => handleStrategyChange(strategy.id, { enabled: checked })}
+                            disabled={strategyInputsDisabled}
+                          />
+                          {strategy.type === "custom" && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleRemoveStrategy(strategy.id)}
+                              disabled={strategyInputsDisabled}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">最低分</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={strategy.minScore ?? ""}
+                            onChange={(e) =>
+                              handleStrategyChange(strategy.id, { minScore: normalizeScoreValue(e.target.value) })
+                            }
+                            disabled={strategyInputsDisabled}
+                            placeholder="例如 40"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">最高分</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={strategy.maxScore ?? ""}
+                            onChange={(e) =>
+                              handleStrategyChange(strategy.id, { maxScore: normalizeScoreValue(e.target.value) })
+                            }
+                            disabled={strategyInputsDisabled}
+                            placeholder="例如 80"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">分数增幅 ≥</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={strategy.requireScoreIncrease ?? ""}
+                            onChange={(e) =>
+                              handleStrategyChange(strategy.id, {
+                                requireScoreIncrease: normalizePositiveNumber(e.target.value),
+                              })
+                            }
+                            disabled={strategyInputsDisabled}
+                            placeholder="默认 0"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">冷却时间 (分钟)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={strategy.cooldownMinutes ?? ""}
+                            onChange={(e) =>
+                              handleStrategyChange(strategy.id, {
+                                cooldownMinutes: normalizePositiveNumber(e.target.value),
+                              })
+                            }
+                            disabled={strategyInputsDisabled}
+                            placeholder="例如 60"
+                          />
+                        </div>
+                        <div className="sm:col-span-2 lg:col-span-4">
+                          <Label className="text-xs text-muted-foreground">通知 Topic (可选)</Label>
+                          <Input
+                            type="text"
+                            value={strategy.topic ?? ""}
+                            onChange={(e) => handleStrategyChange(strategy.id, { topic: e.target.value })}
+                            disabled={strategyInputsDisabled}
+                            placeholder="不填则使用全局 ntfy topic，支持逗号分隔多个"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                          <div className="text-xs">
+                            <p className="font-medium">阳线确认</p>
+                            <p className="text-muted-foreground">仅在阳线/看涨K线时触发</p>
+                          </div>
+                          <Switch
+                            checked={!!strategy.requireBullishCandle}
+                            onCheckedChange={(checked) => handleStrategyChange(strategy.id, { requireBullishCandle: checked })}
+                            disabled={strategyInputsDisabled}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                          <div className="text-xs">
+                            <p className="font-medium">阴线确认</p>
+                            <p className="text-muted-foreground">仅在阴线/看跌K线时触发</p>
+                          </div>
+                          <Switch
+                            checked={!!strategy.requireBearishCandle}
+                            onCheckedChange={(checked) => handleStrategyChange(strategy.id, { requireBearishCandle: checked })}
+                            disabled={strategyInputsDisabled}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                          <div className="text-xs">
+                            <p className="font-medium">策略类型</p>
+                            <p className="text-muted-foreground">{strategy.type === "custom" ? "自定义规则" : "内置规则"}</p>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {strategy.name}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {notificationStrategies.length === 0 && (
+                    <p className="text-xs text-muted-foreground">暂无策略，点击下方按钮添加。</p>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddStrategy}
+                  disabled={strategyInputsDisabled}
+                  className="w-full sm:w-auto"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  添加自定义策略
+                </Button>
               </div>
 
               <div className="space-y-2">

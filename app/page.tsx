@@ -107,6 +107,8 @@ import {
   deleteResponseImagesFromDB,
   migrateFromLocalStorage,
   clearAllData,
+  saveNotificationHistoryToDB,
+  loadNotificationHistoryFromDB,
 } from "@/lib/indexed-db"
 
 const DB_NAME = "llm-api-tester-db"
@@ -369,6 +371,18 @@ interface HistoryItem {
   responseContent: string
   responseRaw: string
   contextTags?: string[]
+}
+
+interface NotificationHistoryItem {
+  id: string
+  timestamp: number
+  strategyName: string
+  strategyId: string
+  score: number
+  candleTime: number
+  summary: string
+  topics: string[]
+  priority: "max" | "high" | "default" | "low" | "min"
 }
 
 interface MessageImage {
@@ -803,6 +817,19 @@ FORMATTED OUTPUT (格式化输出规范):
   const [autoReloadImages, setAutoReloadImages] = useState(DEFAULT_VALUES.autoReloadImages)
 
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [notificationHistory, setNotificationHistory] = useState<NotificationHistoryItem[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("notificationHistory")
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch {
+          return []
+        }
+      }
+    }
+    return []
+  })
   const [pageSize, setPageSize] = useState(DEFAULT_VALUES.pageSize)
   const [currentPage, setCurrentPage] = useState(1)
   const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set())
@@ -834,7 +861,12 @@ FORMATTED OUTPUT (格式化输出规范):
 
   const [modelHistory, setModelHistory] = useState<ModelHistoryItem[]>([])
   const [modelHistoryPage, setModelHistoryPage] = useState(1)
-  const modelHistoryPageSize = 5
+  const modelHistoryPageSize = 3
+  const [notificationHistoryPage, setNotificationHistoryPage] = useState(1)
+  const notificationHistoryPageSize = 3
+  const [isModelHistoryExpanded, setIsModelHistoryExpanded] = useState(false)
+  const [isConversationHistoryExpanded, setIsConversationHistoryExpanded] = useState(false)
+  const [isNotificationHistoryExpanded, setIsNotificationHistoryExpanded] = useState(false)
   const [responseImagesMap, setResponseImagesMap] = useState<Map<number, string[]>>(new Map())
   const [visibleApiKeys, setVisibleApiKeys] = useState<Set<string>>(new Set())
 
@@ -2187,6 +2219,18 @@ FORMATTED OUTPUT (格式化输出规范):
           }
         }
 
+        const notificationHistoryFromDB = await loadNotificationHistoryFromDB()
+        if (notificationHistoryFromDB.length > 0) {
+          setNotificationHistory(notificationHistoryFromDB)
+        } else {
+          const savedNotifications = localStorage.getItem("notificationHistory")
+          if (savedNotifications) {
+            const parsedNotifications = JSON.parse(savedNotifications)
+            setNotificationHistory(parsedNotifications)
+            await saveNotificationHistoryToDB(parsedNotifications)
+          }
+        }
+
         // Load model history from localStorage
         const savedModelHistory = localStorage.getItem("modelHistory")
         if (savedModelHistory) {
@@ -2316,6 +2360,68 @@ FORMATTED OUTPUT (格式化输出规范):
       })
     }
   }, [history])
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("notificationHistory", JSON.stringify(notificationHistory))
+    }
+  }, [notificationHistory])
+
+  const clearNotificationHistory = useCallback(() => {
+    setNotificationHistory([])
+    setNotificationHistoryPage(1)
+    try {
+      localStorage.removeItem("notificationHistory")
+    } catch (error) {
+      console.error("[v0] Failed to clear notification history from localStorage:", error)
+    }
+    saveNotificationHistoryToDB([]).catch((error) => {
+      console.error("[v0] Failed to clear notification history in IndexedDB:", error)
+    })
+    toast({
+      title: "通知记录已清空",
+      duration: 2000,
+    })
+  }, [saveNotificationHistoryToDB, toast])
+
+  const exportNotificationHistoryToCSV = useCallback(() => {
+    if (notificationHistory.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "无数据导出",
+        description: "暂无通知记录",
+        duration: 2000,
+      })
+      return
+    }
+
+    const headers = ["时间", "策略", "评分", "蜡烛时间", "摘要", "优先级", "Topics"]
+    const rows = notificationHistory.map((item) => [
+      new Date(item.timestamp).toLocaleString("zh-CN"),
+      item.strategyName,
+      item.score,
+      new Date(item.candleTime).toLocaleString("zh-CN"),
+      item.summary.replace(/\n/g, " "),
+      item.priority,
+      item.topics.join("; "),
+    ])
+    const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n")
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `notification-history-${Date.now()}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    toast({
+      title: "通知记录已导出",
+      description: `共导出 ${notificationHistory.length} 条记录`,
+      duration: 2000,
+    })
+  }, [notificationHistory, toast])
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -3930,6 +4036,17 @@ FORMATTED OUTPUT (格式化输出规范):
         const priorityOverride =
           strategy.type === "panicBuy" ? "high" : strategy.type === "takeProfit" ? "low" : "default"
 
+        const topicString =
+          strategy.topic && strategy.topic.trim().length > 0 ? strategy.topic : ntfyTopics
+        const usedTopics = Array.from(
+          new Set(
+            (topicString || "")
+              .split(/[,，\s]+/)
+              .map((t) => t.trim())
+              .filter(Boolean),
+          ),
+        )
+
         void sendNtfyNotification({
           score,
           candleTime,
@@ -3937,7 +4054,26 @@ FORMATTED OUTPUT (格式化输出规范):
           titleOverride: `策略提醒 · ${strategy.name}`,
           tags: `strategy,${strategy.type}`,
           priorityOverride,
-          topicOverride: strategy.topic,
+          topicOverride: usedTopics.join(","),
+        })
+
+        setNotificationHistory((prev) => {
+          const newRecord: NotificationHistoryItem = {
+            id: `${strategy.id}-${candleTime}-${now}`,
+            timestamp: now,
+            strategyId: strategy.id,
+            strategyName: strategy.name,
+            score,
+            candleTime,
+            summary: strategySummary,
+            topics: usedTopics,
+            priority: priorityOverride,
+          }
+          const updated = [newRecord, ...prev].slice(0, 200)
+          saveNotificationHistoryToDB(updated).catch((error) =>
+            console.error("[v0] Failed to save notification history:", error),
+          )
+          return updated
         })
 
         strategyNotificationTrackerRef.current.set(strategy.id, {
@@ -3955,7 +4091,7 @@ FORMATTED OUTPUT (格式化输出规范):
 
       return matches
     },
-    [notificationStrategies, sendNtfyNotification, timerEnabled],
+    [ntfyTopics, notificationStrategies, saveNotificationHistoryToDB, sendNtfyNotification, timerEnabled],
   )
 
   // Combine test and timer start logic
@@ -4396,6 +4532,14 @@ FORMATTED OUTPUT (格式化输出规范):
 
   const totalPages = Math.ceil(history.length / pageSize)
   const paginatedHistory = history.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const notificationHistoryTotalPages = Math.max(
+    1,
+    Math.ceil(notificationHistory.length / notificationHistoryPageSize),
+  )
+  const paginatedNotificationHistory = notificationHistory.slice(
+    (notificationHistoryPage - 1) * notificationHistoryPageSize,
+    notificationHistoryPage * notificationHistoryPageSize,
+  )
 
   const [requestCopyText, setRequestCopyText] = useState("复制")
   const [responseCopyText, setResponseCopyText] = useState("复制")
@@ -5797,9 +5941,18 @@ FORMATTED OUTPUT (格式化输出规范):
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>历史模型</CardTitle>
-                <CardDescription>已测试的模型配置历史 (共 {modelHistory.length} 条)</CardDescription>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsModelHistoryExpanded((prev) => !prev)}
+                >
+                  {isModelHistoryExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                </Button>
+                <div>
+                  <CardTitle>历史模型</CardTitle>
+                  <CardDescription>已测试的模型配置历史 (共 {modelHistory.length} 条)</CardDescription>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={clearModelHistory} disabled={modelHistory.length === 0}>
@@ -5818,14 +5971,15 @@ FORMATTED OUTPUT (格式化输出规范):
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            {modelHistory.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">暂无历史记录</div>
-            ) : (
-              <>
-                <div className="border rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <Table>
+          {isModelHistoryExpanded && (
+            <CardContent>
+              {modelHistory.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">暂无历史记录</div>
+              ) : (
+                <>
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-[140px]">时间</TableHead>
@@ -5917,40 +6071,41 @@ FORMATTED OUTPUT (格式化输出规范):
                           </TableRow>
                         ))}
                       </TableBody>
-                    </Table>
+                      </Table>
+                    </div>
                   </div>
-                </div>
 
-                {modelHistoryTotalPages > 1 && (
-                  <div className="flex items-center justify-between mt-4">
-                    <div className="text-sm text-muted-foreground">
-                      第 {modelHistoryPage} / {modelHistoryTotalPages} 页
+                  {modelHistoryTotalPages > 1 && (
+                    <div className="flex items-center justify-between mt-4">
+                      <div className="text-sm text-muted-foreground">
+                        第 {modelHistoryPage} / {modelHistoryTotalPages} 页
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setModelHistoryPage((p) => Math.max(1, p - 1))}
+                          disabled={modelHistoryPage === 1}
+                        >
+                          <ChevronLeft className="size-4" />
+                          上一页
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setModelHistoryPage((p) => Math.min(modelHistoryTotalPages, p + 1))}
+                          disabled={modelHistoryPage === modelHistoryTotalPages}
+                        >
+                          下一页
+                          <ChevronRight className="size-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setModelHistoryPage((p) => Math.max(1, p - 1))}
-                        disabled={modelHistoryPage === 1}
-                      >
-                        <ChevronLeft className="size-4" />
-                        上一页
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setModelHistoryPage((p) => Math.min(modelHistoryTotalPages, p + 1))}
-                        disabled={modelHistoryPage === modelHistoryTotalPages}
-                      >
-                        下一页
-                        <ChevronRight className="size-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
+                  )}
+                </>
+              )}
+            </CardContent>
+          )}
         </Card>
 
         <Card>
@@ -6911,12 +7066,21 @@ FORMATTED OUTPUT (格式化输出规范):
         {/* History Section - Full width */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>历史对话</CardTitle>
-                <CardDescription>共 {history.length} 条记录</CardDescription>
-              </div>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsConversationHistoryExpanded((prev) => !prev)}
+                >
+                  {isConversationHistoryExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                </Button>
+                <div>
+                  <CardTitle>历史对话</CardTitle>
+                  <CardDescription>共 {history.length} 条记录</CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
                     type="checkbox"
@@ -6966,14 +7130,15 @@ FORMATTED OUTPUT (格式化输出规范):
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            {history.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">暂无历史记录</div>
-            ) : (
-              <>
-                <div className="border rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <Table>
+          {isConversationHistoryExpanded && (
+            <CardContent>
+              {history.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">暂无历史记录</div>
+              ) : (
+                <>
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-[160px]">时间/模型/用时/上下文</TableHead>
@@ -7327,9 +7492,162 @@ FORMATTED OUTPUT (格式化输出规范):
                     </Button>
                   </div>
                 )}
-              </>
-            )}
-          </CardContent>
+                </>
+              )}
+            </CardContent>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsNotificationHistoryExpanded((prev) => !prev)}
+                >
+                  {isNotificationHistoryExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                </Button>
+                <div>
+                  <CardTitle>历史通知</CardTitle>
+                  <CardDescription>策略触发记录（共 {notificationHistory.length} 条）</CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearNotificationHistory}
+                  disabled={notificationHistory.length === 0}
+                >
+                  <RotateCcw className="mr-2 size-4" />
+                  清空
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportNotificationHistoryToCSV}
+                  disabled={notificationHistory.length === 0}
+                >
+                  <Download className="mr-2 size-4" />
+                  导出
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          {isNotificationHistoryExpanded && (
+            <CardContent>
+              {notificationHistory.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">暂无通知记录</div>
+              ) : (
+                <>
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[160px]">触发时间</TableHead>
+                          <TableHead className="w-[140px]">策略</TableHead>
+                          <TableHead className="w-[80px]">评分</TableHead>
+                          <TableHead className="w-[160px]">蜡烛时间</TableHead>
+                          <TableHead>摘要</TableHead>
+                          <TableHead className="w-[160px]">通道/优先级</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedNotificationHistory.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="text-xs">
+                              {new Date(item.timestamp).toLocaleString("zh-CN", {
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                              })}
+                            </TableCell>
+                            <TableCell className="text-xs">{item.strategyName}</TableCell>
+                            <TableCell className="text-xs font-mono">{item.score.toFixed(1)}</TableCell>
+                            <TableCell className="text-xs">
+                              {new Date(item.candleTime).toLocaleString("zh-CN", {
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              <div className="line-clamp-3 whitespace-pre-wrap break-words">{item.summary}</div>
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              <div className="flex flex-wrap gap-1">
+                                {item.topics.length === 0 ? (
+                                  <Badge variant="secondary">默认 Topic</Badge>
+                                ) : (
+                                  item.topics.map((topic) => (
+                                    <Badge key={`${item.id}-${topic}`} variant="outline">
+                                      {topic}
+                                    </Badge>
+                                  ))
+                                )}
+                              </div>
+                              <div className="mt-2">
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                    item.priority === "high"
+                                      ? "bg-red-100 text-red-700"
+                                      : item.priority === "low"
+                                        ? "bg-amber-100 text-amber-700"
+                                        : item.priority === "max"
+                                          ? "bg-red-200 text-red-900"
+                                          : "bg-slate-100 text-slate-700"
+                                  }`}
+                                >
+                                  {item.priority.toUpperCase()}
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                {notificationHistoryTotalPages > 1 && (
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-sm text-muted-foreground">
+                      第 {notificationHistoryPage} / {notificationHistoryTotalPages} 页
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setNotificationHistoryPage((p) => Math.max(1, p - 1))}
+                        disabled={notificationHistoryPage === 1}
+                      >
+                        <ChevronLeft className="size-4" />
+                        上一页
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setNotificationHistoryPage((p) => Math.min(notificationHistoryTotalPages, p + 1))
+                        }
+                        disabled={notificationHistoryPage === notificationHistoryTotalPages}
+                      >
+                        下一页
+                        <ChevronRight className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                </>
+              )}
+            </CardContent>
+          )}
         </Card>
 
         {/* Request and Response Details - Side by side */}

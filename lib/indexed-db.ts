@@ -1,9 +1,10 @@
 // IndexedDB utility for storing history with images
 const DB_NAME = "llm-api-test-db"
-const DB_VERSION = 2 // 升级版本以添加响应图片存储
+const DB_VERSION = 3 // 升级版本以添加响应图片存储及通知历史
 const HISTORY_STORE = "history"
 const SETTINGS_STORE = "settings"
 const RESPONSE_IMAGES_STORE = "responseImages" // 存储响应中的图片
+const NOTIFICATION_HISTORY_STORE = "notificationHistory"
 
 interface HistoryItem {
   id: string
@@ -23,6 +24,18 @@ interface MessageImage {
   base64?: string
   mimeType?: string
   name?: string
+}
+
+interface NotificationHistoryItem {
+  id: string
+  timestamp: number
+  strategyName: string
+  strategyId: string
+  score: number
+  candleTime: number
+  summary: string
+  topics: string[]
+  priority: "max" | "high" | "default" | "low" | "min"
 }
 
 // Initialize IndexedDB
@@ -51,6 +64,11 @@ export const initDB = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains(RESPONSE_IMAGES_STORE)) {
         const responseImagesStore = db.createObjectStore(RESPONSE_IMAGES_STORE, { keyPath: "historyTimestamp" })
         responseImagesStore.createIndex("timestamp", "historyTimestamp", { unique: true })
+      }
+
+      if (!db.objectStoreNames.contains(NOTIFICATION_HISTORY_STORE)) {
+        const notificationStore = db.createObjectStore(NOTIFICATION_HISTORY_STORE, { keyPath: "id" })
+        notificationStore.createIndex("timestamp", "timestamp", { unique: false })
       }
     }
   })
@@ -143,6 +161,48 @@ export const loadImagesFromDB = async (): Promise<MessageImage[]> => {
 }
 
 export const loadImagesToDB = loadImagesFromDB
+
+export const saveNotificationHistoryToDB = async (items: NotificationHistoryItem[]): Promise<void> => {
+  const db = await initDB()
+  const transaction = db.transaction([NOTIFICATION_HISTORY_STORE], "readwrite")
+  const store = transaction.objectStore(NOTIFICATION_HISTORY_STORE)
+
+  await new Promise<void>((resolve, reject) => {
+    const clearRequest = store.clear()
+    clearRequest.onsuccess = () => resolve()
+    clearRequest.onerror = () => reject(clearRequest.error)
+  })
+
+  for (const item of items) {
+    await new Promise<void>((resolve, reject) => {
+      const addRequest = store.add(item)
+      addRequest.onsuccess = () => resolve()
+      addRequest.onerror = () => reject(addRequest.error)
+    })
+  }
+
+  db.close()
+}
+
+export const loadNotificationHistoryFromDB = async (): Promise<NotificationHistoryItem[]> => {
+  const db = await initDB()
+  const transaction = db.transaction([NOTIFICATION_HISTORY_STORE], "readonly")
+  const store = transaction.objectStore(NOTIFICATION_HISTORY_STORE)
+
+  return new Promise((resolve, reject) => {
+    const request = store.getAll()
+    request.onsuccess = () => {
+      const items = request.result as NotificationHistoryItem[]
+      items.sort((a, b) => b.timestamp - a.timestamp)
+      resolve(items)
+      db.close()
+    }
+    request.onerror = () => {
+      reject(request.error)
+      db.close()
+    }
+  })
+}
 
 // Migrate from localStorage to IndexedDB
 export const migrateFromLocalStorage = async (): Promise<void> => {
